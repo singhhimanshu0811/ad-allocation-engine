@@ -1,0 +1,34 @@
+server:
+  port: 3033
+
+spring:
+  application:
+    name: routeiq-device-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/routeiq}
+    username: ${DB_USERNAME:adserve}
+    password: ${DB_PASSWORD:adserve@234}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+
+device:
+  auth:
+    cache-ttl-ms: ${DEVICE_AUTH_CACHE_TTL_MS:3600000}
+  tasks:
+    post-geo:
+      poll-interval-seconds: ${POST_GEO_POLL_INTERVAL_SECONDS:60}
+    serve-ad:
+      poll-interval-seconds: ${SERVE_AD_POLL_INTERVAL_SECONDS:900}
+
+heartbeat:
+  cleanup:
+    fixed-delay-ms: ${HEARTBEAT_CLEANUP_FIXED_DELAY_MS:43200000}
+    retention-days: ${HEARTBEAT_RETENTION_DAYS:7}
