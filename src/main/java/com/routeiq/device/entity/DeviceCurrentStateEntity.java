@@ -5,18 +5,20 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
+import lombok.Data;
 import org.locationtech.jts.geom.Point;
 
 @Table(name = "device_current_state")
 @Entity
+@Data
 public class DeviceCurrentStateEntity {
 
     @Id
     @Column(name = "device_id", nullable = false, length = 16)
     private String deviceId;
 
-    @Column(name = "current_route_id", nullable = false, length = 16)
-    private String currentRouteId;
+    @Column(name = "current_route_id", nullable = false)
+    private Long currentRouteId;
 
     @Column(name = "position", nullable = false, columnDefinition = "geography(Point,4326)")
     private Point position;

@@ -16,9 +16,7 @@ import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 
 import java.sql.Timestamp;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalTime;
+import java.time.*;
 import java.util.List;
 import java.util.Optional;
 
@@ -166,10 +164,12 @@ public class DeviceService {
 //        state.setErrorCovariance(filter.getErrorCovariance());
 //        state.setUpdatedAt(pingTime);
 //        deviceCurrentStateRepository.save(state);
+
+        return "ok";
     }
 
     @Transactional
-    public void onPing(String deviceId, double lat, double lon, Timestamp pingTime){
+    public void onPing(String deviceId, double lat, double lon, Instant pingTime){
         //serve the device
         //step1 = find which device is calling for content
         Optional<DeviceRouteEntity> optionalAssignment = deviceRouteRepository
@@ -209,9 +209,13 @@ public class DeviceService {
             long offsetSeconds = Math.round(fraction * segmentSeconds);
 
             Instant interpolatedScheduledTime = beforeTime.plusSeconds(offsetSeconds);
-            Instant actualTime = pingTime.toInstant();
 
-            rawDelaySeconds = Duration.between(interpolatedScheduledTime, actualTime).getSeconds();
+            // re-anchor to today's date, keeping only the time-of-day component
+            LocalTime timeOfDay = interpolatedScheduledTime.atZone(ZoneOffset.UTC).toLocalTime();
+            LocalDate today = pingTime.atZone(ZoneOffset.UTC).toLocalDate();
+            Instant normalizedScheduledTime = timeOfDay.atDate(today).toInstant(ZoneOffset.UTC);
+
+            rawDelaySeconds = Duration.between(normalizedScheduledTime, pingTime).getSeconds();
         }
 
         // else: before end/start of stop list — no valid bracket, skip delay calc for this ping

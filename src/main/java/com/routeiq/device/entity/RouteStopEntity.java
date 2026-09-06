@@ -1,6 +1,7 @@
 package com.routeiq.device.entity;
 
 import jakarta.persistence.*;
+import lombok.Data;
 import org.locationtech.jts.geom.Point;
 
 import java.time.Instant;
@@ -8,6 +9,7 @@ import java.time.LocalTime;
 
 @Table(name = "route_stops")
 @Entity
+@Data
 public class RouteStopEntity {
     @Id
     @GeneratedValue(strategy = jakarta.persistence.GenerationType.IDENTITY)
