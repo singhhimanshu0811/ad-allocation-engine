@@ -5,5 +5,7 @@ import jakarta.validation.constraints.NotNull;
 
 public record HeartbeatRequest(
         @NotBlank String deviceId,
-        @NotNull Boolean heartbeat
+        @NotNull Boolean heartbeat,
+        @NotBlank double lat,
+        @NotBlank double lon
 ) {}

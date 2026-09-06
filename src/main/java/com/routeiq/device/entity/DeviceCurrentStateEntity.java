@@ -3,7 +3,8 @@ package com.routeiq.device.entity;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.*;
 
-import java.sql.Timestamp;
+import java.time.Instant;
+
 import org.locationtech.jts.geom.Point;
 
 @Table(name = "device_current_state")
@@ -31,5 +32,5 @@ public class DeviceCurrentStateEntity {
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
     @Column(name = "updated_at", nullable = false)
-    private Timestamp updatedAt;
+    private Instant updatedAt;
 }

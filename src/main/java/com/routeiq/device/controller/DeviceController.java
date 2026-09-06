@@ -74,8 +74,7 @@ public class DeviceController {
     )
     public String heartbeat(@Valid @RequestBody HeartbeatRequest request) {
         return deviceService.heartbeat(
-                request.deviceId(),
-                request.heartbeat()
+                request
         );
     }
 }

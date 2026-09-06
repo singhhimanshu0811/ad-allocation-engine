@@ -6,7 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.sql.Timestamp;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -39,7 +39,7 @@ public class GeoLocationEntity extends AuditableEntity {
 
     @Column(name = "generated_at", nullable = false)
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
-    private Timestamp generatedAt;
+    private Instant generatedAt;
 
 
 }

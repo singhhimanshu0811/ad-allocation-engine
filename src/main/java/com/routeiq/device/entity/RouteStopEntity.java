@@ -3,6 +3,7 @@ package com.routeiq.device.entity;
 import jakarta.persistence.*;
 import org.locationtech.jts.geom.Point;
 
+import java.time.Instant;
 import java.time.LocalTime;
 
 @Table(name = "route_stops")
@@ -24,5 +25,5 @@ public class RouteStopEntity {
     private Double distanceAlongRoute;
 
     @Column(name = "scheduled_time", nullable = false)
-    private LocalTime scheduledTime;
+    private Instant scheduledTime;
 }

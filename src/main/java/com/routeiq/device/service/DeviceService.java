@@ -1,30 +1,26 @@
 package com.routeiq.device.service;
 
+import com.routeiq.device.config.DelayKalmanFilter;
 import com.routeiq.device.entity.*;
 import com.routeiq.device.model.*;
 import com.routeiq.device.config.DeviceTaskProperties;
-import com.routeiq.device.constants.DeviceTaskConstants;
-import com.routeiq.device.repository.DeviceCredentialRepository;
-import com.routeiq.device.repository.DeviceTaskRepository;
-import com.routeiq.device.repository.DeviceRouteRepository;
-import com.routeiq.device.repository.GeoLocationRepository;
-import com.routeiq.device.repository.HeartbeatRepository;
-import com.routeiq.device.repository.ImageRepository;
+import com.routeiq.device.repository.*;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
-import jakarta.validation.constraints.Null;
 import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.modelmapper.ModelMapper;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalTime;
 import java.util.List;
-import java.util.Objects;
+import java.util.Optional;
 
 @Service
 @Slf4j
@@ -38,10 +34,19 @@ public class DeviceService {
     private final DeviceRouteRepository deviceRouteRepository;
     private final DeviceTaskProperties deviceTaskProperties;
     private final EntityManager entityManager;
+    private final RouteStopsRepository routeStopsRepository;
+    private final RouteSpatialRepository routeSpatialRepository;
+    private final DeviceCurrentStateRepository deviceCurrentStateRepository;
 
     private final ModelMapper modelMapper;
 
+
+
     private final GeometryFactory gf = new GeometryFactory(new PrecisionModel(), 4326);
+
+
+    private static final double PROCESS_NOISE = 0.1;
+    private static final double MEASUREMENT_NOISE = 2.0;
 
     public DeviceService(DeviceCredentialRepository deviceCredentialRepository,
                          GeoLocationRepository geoLocationRepository,
@@ -50,6 +55,9 @@ public class DeviceService {
                          DeviceTaskRepository deviceTaskRepository,
                          DeviceRouteRepository deviceRouteRepository,
                          DeviceTaskProperties deviceTaskProperties,
+                         RouteStopsRepository routeStopsRepository,
+                         RouteSpatialRepository routeSpatialRepository,
+                         DeviceCurrentStateRepository deviceCurrentStateRepository,
                          EntityManager entityManager,
                          ModelMapper modelMapper) {
         this.deviceCredentialRepository = deviceCredentialRepository;
@@ -58,6 +66,9 @@ public class DeviceService {
         this.imageRepository = imageRepository;
         this.deviceTaskRepository = deviceTaskRepository;
         this.deviceRouteRepository = deviceRouteRepository;
+        this.routeStopsRepository = routeStopsRepository;
+        this.routeSpatialRepository = routeSpatialRepository;
+        this.deviceCurrentStateRepository = deviceCurrentStateRepository;
         this.deviceTaskProperties = deviceTaskProperties;
         this.entityManager = entityManager;
         this.modelMapper = modelMapper;
@@ -115,7 +126,7 @@ public class DeviceService {
             geoLocation.setLan(request.lan());
             geoLocation.setSequenceNumber(request.sequenceNumber());
 
-            geoLocation.setGeneratedAt(Timestamp.from(java.time.Instant.now()));
+            geoLocation.setGeneratedAt(java.time.Instant.now());
 
             geoLocationRepository.save(geoLocation);
 
@@ -135,9 +146,101 @@ public class DeviceService {
     }
 
     @Transactional
-    public String heartbeat(String deviceId, Boolean heartbeat) {
-        DeviceCredentialEntity device = entityManager.getReference(DeviceCredentialEntity.class, deviceId);
-        heartbeatRepository.save(new HeartbeatEntity(device, heartbeat, java.time.Instant.now()));
-        return "OKay";
+    public String heartbeat(HeartbeatRequest request) {
+      //todo
+
+//        DeviceCurrentStateEntity state = deviceCurrentStateRepository.findById(request.deviceId())
+//                .orElseGet(() -> {
+//                    DeviceCurrentStateEntity s = new DeviceCurrentStateEntity();
+//                    s.setDeviceId(request.deviceId());
+//                    s.setSmoothedDelay(0.0);
+//                    s.setErrorCovariance(1.0); // initial uncertainty - need to play with it
+//                    return s;
+//                });
+//
+//        Point position = gf.createPoint(new Coordinate(request.lon(), request.lat()));
+//        state.setCurrentRouteId(request.routeId());
+//        state.setPosition(position);
+//        state.setDistanceAlongRoute(request.distanceAlongRoute());
+//        state.setSmoothedDelay(request.smoothedDelay());
+//        state.setErrorCovariance(filter.getErrorCovariance());
+//        state.setUpdatedAt(pingTime);
+//        deviceCurrentStateRepository.save(state);
+    }
+
+    @Transactional
+    public void onPing(String deviceId, double lat, double lon, Timestamp pingTime){
+        //serve the device
+        //step1 = find which device is calling for content
+        Optional<DeviceRouteEntity> optionalAssignment = deviceRouteRepository
+                .findByDeviceIdAndActiveTrue(deviceId);
+
+        if(optionalAssignment.isEmpty()){
+            //nothing is there for this device, so we can just return
+            log.warn("No active route assignment found for device: {}", deviceId);
+            return;
+        }
+
+
+        Long routeId = optionalAssignment.get().getRoute().getRouteId();
+
+        //step2 = find the distance along the route for the given lat/lon for given stops
+        double distanceAlongRoute = routeSpatialRepository.locateDistanceAlongRoute(routeId, lat, lon);
+
+        //step3 : find bracketing stops
+        List<RouteStopEntity> stops = routeStopsRepository.findByRouteIdOrderBySequenceNumberAsc(routeId);
+
+
+        RouteStopEntity before = null, after = null;
+        for (RouteStopEntity stop : stops) {
+            if (stop.getDistanceAlongRoute() <= distanceAlongRoute) before = stop; //finding the last previous stop that is less than or equal to the distance along the route
+            if (stop.getDistanceAlongRoute() >= distanceAlongRoute && after == null) after = stop;//finding the next stop that is greater than or equal to the distance along the route
+        }
+
+        //step4: we know for each route - what is the delay between stop - so then we calculate what is the expected time and if there is some delay
+        double rawDelaySeconds = 0.0;
+        if (before != null && after != null && !before.equals(after)) {
+            double fraction = (distanceAlongRoute - before.getDistanceAlongRoute())
+                    / (after.getDistanceAlongRoute() - before.getDistanceAlongRoute());
+
+            Instant beforeTime = before.getScheduledTime();
+            Instant afterTime = after.getScheduledTime();
+            long segmentSeconds = Duration.between(beforeTime, afterTime).getSeconds();
+            long offsetSeconds = Math.round(fraction * segmentSeconds);
+
+            Instant interpolatedScheduledTime = beforeTime.plusSeconds(offsetSeconds);
+            Instant actualTime = pingTime.toInstant();
+
+            rawDelaySeconds = Duration.between(interpolatedScheduledTime, actualTime).getSeconds();
+        }
+
+        // else: before end/start of stop list — no valid bracket, skip delay calc for this ping
+
+        DeviceCurrentStateEntity state = deviceCurrentStateRepository.findById(deviceId)
+                .orElseGet(() -> {
+                    DeviceCurrentStateEntity s = new DeviceCurrentStateEntity();
+                    s.setDeviceId(deviceId);
+                    s.setSmoothedDelay(0.0);
+                    s.setErrorCovariance(1.0); // initial uncertainty - need to play with it
+                    return s;
+                });
+
+        DelayKalmanFilter filter = new DelayKalmanFilter(
+                state.getSmoothedDelay(), state.getErrorCovariance(),
+                PROCESS_NOISE, MEASUREMENT_NOISE);
+        double smoothedDelay = filter.update(rawDelaySeconds);
+
+        //step 6 : persist current state of device
+         Point position = gf.createPoint(new Coordinate(lon, lat));
+         state.setCurrentRouteId(routeId);
+         state.setPosition(position);
+         state.setDistanceAlongRoute(distanceAlongRoute);
+         state.setSmoothedDelay(smoothedDelay);
+         state.setErrorCovariance(filter.getErrorCovariance());
+         state.setUpdatedAt(pingTime);
+         deviceCurrentStateRepository.save(state);
+
+         //step 7 : todo : append in historical log
+
     }
 }

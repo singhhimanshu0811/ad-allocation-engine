@@ -3,9 +3,11 @@ package com.routeiq.device.repository;
 import com.routeiq.device.entity.DeviceRouteEntity;
 import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
+@Repository
 public interface DeviceRouteRepository extends JpaRepository<DeviceRouteEntity, Long> {
 
     java.util.Optional<DeviceRouteEntity> findByDeviceIdAndFromLocationAndToLocation(
