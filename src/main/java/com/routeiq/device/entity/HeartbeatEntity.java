@@ -1,6 +1,7 @@
 package com.routeiq.device.entity;
 
 import jakarta.persistence.*;
+import lombok.NoArgsConstructor;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -9,15 +10,21 @@ import java.time.Instant;
 @Table(name = "heartbeats", indexes = {
         @Index(name = "idx_heartbeats_device_received_at", columnList = "device_id,received_at")
 })
+@NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
 public class HeartbeatEntity extends AuditableEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "device_id", nullable = false)
-    private DeviceCredentialEntity device;
+    @Column(name = "device_id", nullable = false, length = 16)
+    private String deviceId;
+
+    @Column(name = "route_id", nullable = false)
+    private Long routeId;
+
+    @Column(name = "distance_along_route", nullable = false)
+    private double distanceAlongRoute;
 
     @Column(nullable = false)
     private boolean heartbeat;
@@ -28,13 +35,4 @@ public class HeartbeatEntity extends AuditableEntity {
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
-    protected HeartbeatEntity() {
-    }
-
-    public HeartbeatEntity(DeviceCredentialEntity device, boolean heartbeat, Instant receivedAt) {
-        this.device = device;
-        this.heartbeat = heartbeat;
-        this.receivedAt = receivedAt;
-        this.expiresAt = receivedAt.plus(Duration.ofDays(7));
-    }
 }
