@@ -3,7 +3,7 @@ package com.routeiq.device.controller;
 import com.routeiq.device.model.GetImagesRequest;
 import com.routeiq.device.model.HeartbeatRequest;
 import com.routeiq.device.model.ImageRow;
-import com.routeiq.device.model.SaveGeoLocationsRequest;
+import com.routeiq.device.model.SaveGeoLocationsPingRequest;
 import com.routeiq.device.model.SaveRouteRequest;
 import com.routeiq.device.model.TaskResponse;
 import com.routeiq.device.model.RouteResponse;
@@ -50,12 +50,12 @@ public class DeviceController {
     }
 
     @PostMapping(
-            value = "/geo",
+            value = "/saveGeoLocations",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_PLAIN_VALUE
     )
-    public String saveGeoLocations(@Valid @RequestBody SaveGeoLocationsRequest request) {
-        return deviceService.saveGeoLocations(request.deviceId(), request.routeId(), request.locations());
+    public Boolean saveGeoLocations(@Valid @RequestBody SaveGeoLocationsPingRequest request) {
+        return deviceService.saveGeoLocations(request);
     }
 
     @PostMapping(

@@ -1,16 +1,7 @@
 package com.routeiq.device.service;
 
-import com.routeiq.device.model.GeoLocation;
-import com.routeiq.device.model.ImageRow;
-import com.routeiq.device.model.SaveRouteRequest;
-import com.routeiq.device.model.TaskResponse;
-import com.routeiq.device.model.RouteResponse;
-import com.routeiq.device.model.SaveTaskRequest;
-import com.routeiq.device.entity.GeoLocationEntity;
-import com.routeiq.device.entity.HeartbeatEntity;
-import com.routeiq.device.entity.DeviceRouteEntity;
-import com.routeiq.device.entity.DeviceTaskEntity;
-import com.routeiq.device.entity.DeviceCredentialEntity;
+import com.routeiq.device.entity.*;
+import com.routeiq.device.model.*;
 import com.routeiq.device.config.DeviceTaskProperties;
 import com.routeiq.device.constants.DeviceTaskConstants;
 import com.routeiq.device.repository.DeviceCredentialRepository;
@@ -21,14 +12,22 @@ import com.routeiq.device.repository.HeartbeatRepository;
 import com.routeiq.device.repository.ImageRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import jakarta.validation.constraints.Null;
+import lombok.extern.slf4j.Slf4j;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.PrecisionModel;
+import org.modelmapper.ModelMapper;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.Objects;
 
 @Service
+@Slf4j
 public class DeviceService {
 
     private final DeviceCredentialRepository deviceCredentialRepository;
@@ -40,6 +39,10 @@ public class DeviceService {
     private final DeviceTaskProperties deviceTaskProperties;
     private final EntityManager entityManager;
 
+    private final ModelMapper modelMapper;
+
+    private final GeometryFactory gf = new GeometryFactory(new PrecisionModel(), 4326);
+
     public DeviceService(DeviceCredentialRepository deviceCredentialRepository,
                          GeoLocationRepository geoLocationRepository,
                          HeartbeatRepository heartbeatRepository,
@@ -47,7 +50,8 @@ public class DeviceService {
                          DeviceTaskRepository deviceTaskRepository,
                          DeviceRouteRepository deviceRouteRepository,
                          DeviceTaskProperties deviceTaskProperties,
-                         EntityManager entityManager) {
+                         EntityManager entityManager,
+                         ModelMapper modelMapper) {
         this.deviceCredentialRepository = deviceCredentialRepository;
         this.geoLocationRepository = geoLocationRepository;
         this.heartbeatRepository = heartbeatRepository;
@@ -56,6 +60,7 @@ public class DeviceService {
         this.deviceRouteRepository = deviceRouteRepository;
         this.deviceTaskProperties = deviceTaskProperties;
         this.entityManager = entityManager;
+        this.modelMapper = modelMapper;
     }
 
     @Transactional
@@ -85,71 +90,42 @@ public class DeviceService {
 
     @Transactional
     public RouteResponse saveRoute(SaveRouteRequest request) {
-        DeviceRouteEntity existingRoute = deviceRouteRepository
-                .findByDeviceIdAndFromLocationAndToLocation(
-                        request.deviceId(),
-                        request.fromLocation(),
-                        request.toLocation()
-                )
-                .orElse(null);
 
-        if (existingRoute != null && existingRoute.isActive()) {
-            return new RouteResponse(existingRoute.getId());
-        }
+        List<GeoLocationEntity> geoLocationEntities = geoLocationRepository.findByCaptureSessionIdOrderByTimestampAsc(request.captureSessionId());
 
-        deviceRouteRepository.deactivateActiveRoute(request.deviceId());
+        Coordinate[] coords = geoLocationEntities.stream()
+                .map(p -> new Coordinate(p.getLan(), p.getLat()))
+                .toArray(Coordinate[]::new);
 
-        Long routeId;
-        if (existingRoute != null) {
-            existingRoute.setActive(true);
-            routeId = deviceRouteRepository.save(existingRoute).getId();
-        } else {
-            routeId = deviceRouteRepository.save(new DeviceRouteEntity(
-                    request.deviceId(),
-                    request.fromLocation(),
-                    request.toLocation(),
-                    true
-            )).getId();
-        }
+        RouteEntity route = new RouteEntity();
+        route.setRouteName(request.routeName());
+        route.setPath(gf.createLineString(coords));
 
-        String taskName = DeviceTaskConstants.POST_GEO;
-        DeviceTaskEntity task = deviceTaskRepository.findById(request.deviceId())
-                .orElseGet(() -> new DeviceTaskEntity(
-                        request.deviceId(),
-                        deviceTaskProperties.pollIntervalSeconds(taskName),
-                        taskName
-                ));
-        task.setTask(DeviceTaskConstants.POST_GEO);
-        task.setPollIntervalSeconds(deviceTaskProperties.pollIntervalSeconds(taskName));
-        deviceTaskRepository.save(task);
-
-        return new RouteResponse(routeId);
+        return new RouteResponse(route.getRouteId());
     }
 
     @Transactional
-    public String saveGeoLocations(String deviceId, Long routeId, List<GeoLocation> locations) {
-        DeviceRouteEntity activeRoute = deviceRouteRepository.findByDeviceIdAndActiveTrue(deviceId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
-                        "No active route configured for device: " + deviceId
-                ));
+    public Boolean saveGeoLocations(SaveGeoLocationsPingRequest request) {
 
-        if (!Objects.equals(activeRoute.getId(), routeId)) {
-            throw new ResponseStatusException(HttpStatus.EXPECTATION_FAILED,
-                    "Active route configured did not match request scope route for device: " + deviceId);
+       try {
+            GeoLocationEntity geoLocation = new GeoLocationEntity();
+            geoLocation.setDeviceId(request.deviceId());
+            geoLocation.setCaptureSessionId(request.captureSessionId());
+            geoLocation.setLat(request.lat());
+            geoLocation.setLan(request.lan());
+            geoLocation.setSequenceNumber(request.sequenceNumber());
+
+            geoLocation.setGeneratedAt(Timestamp.from(java.time.Instant.now()));
+
+            geoLocationRepository.save(geoLocation);
+
+            return true;
         }
 
-        geoLocationRepository.saveAll(locations.stream()
-                .map(location -> new GeoLocationEntity(
-                        activeRoute,
-                        location.lat(),
-                        location.lang(),
-                        location.speed(),
-                        location.heading(),
-                        location.generatedAt()
-                ))
-                .toList());
-
-        return "saved okay";
+       catch (Exception e) {
+           log.error("Error saving geo location for device {}: {}", request.deviceId(), e.getMessage());
+            return false;
+        }
     }
 
     public List<ImageRow> getImages(String deviceId, GeoLocation location) {
