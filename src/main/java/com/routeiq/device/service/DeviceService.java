@@ -1,6 +1,8 @@
 package com.routeiq.device.service;
 
-import com.routeiq.device.config.DelayKalmanFilter;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.routeiq.device.entity.*;
 import com.routeiq.device.model.*;
 import com.routeiq.device.config.DeviceTaskProperties;
@@ -10,15 +12,11 @@ import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 
-import java.sql.Timestamp;
-import java.time.*;
 import java.util.List;
-import java.util.Optional;
 
 @Service
 @Slf4j
@@ -37,6 +35,8 @@ public class DeviceService {
     private final DeviceCurrentStateRepository deviceCurrentStateRepository;
 
     private final ModelMapper modelMapper;
+
+    private static final ObjectMapper mapper = new ObjectMapper();
 
 
 
@@ -99,7 +99,20 @@ public class DeviceService {
         List<GeoLocationEntity> geoLocationEntities = geoLocationRepository.findByCaptureSessionIdOrderByTimestampAsc(request.captureSessionId());
 
         Coordinate[] coords = geoLocationEntities.stream()
-                .map(p -> new Coordinate(p.getLan(), p.getLat()))
+                .map(p -> {
+                    String strPositions = p.getPositions();
+                    List<GeoLocation> positions = null;
+                    try {
+                        positions = (strPositions == null || strPositions.isBlank())
+                                ? List.of()
+                                : mapper.readValue(strPositions, new TypeReference<List<GeoLocation>>() {});
+                    } catch (JsonProcessingException e) {
+                        log.error("Unable to create route for request {} due to error parsing positions: {}", request, e.getMessage());
+                        positions = List.of();
+                    }
+                    return positions.stream().map(pos -> new Coordinate(pos.lang(), pos.lat())).toArray(Coordinate[]::new);
+                })
+                .flatMap(java.util.Arrays::stream)
                 .toArray(Coordinate[]::new);
 
         RouteEntity route = new RouteEntity();
@@ -116,8 +129,7 @@ public class DeviceService {
             GeoLocationEntity geoLocation = new GeoLocationEntity();
             geoLocation.setDeviceId(request.deviceId());
             geoLocation.setCaptureSessionId(request.captureSessionId());
-            geoLocation.setLat(request.lat());
-            geoLocation.setLan(request.lan());
+            geoLocation.setPositions(mapper.writeValueAsString(request.locations()));
             geoLocation.setSequenceNumber(request.sequenceNumber());
 
             geoLocation.setGeneratedAt(java.time.Instant.now());
@@ -138,6 +150,7 @@ public class DeviceService {
                 .map(image -> new ImageRow(image.getImageUrl(), image.getTimestamp()))
                 .toList();
     }
+
 
 
 }

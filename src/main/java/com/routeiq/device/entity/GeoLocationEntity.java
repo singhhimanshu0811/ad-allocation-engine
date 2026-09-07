@@ -1,13 +1,14 @@
 package com.routeiq.device.entity;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.routeiq.device.model.GeoLocation;
 import jakarta.persistence.*;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -31,11 +32,10 @@ public class GeoLocationEntity extends AuditableEntity {
     @Column(name = "sequence_number", nullable = false)
     private Long sequenceNumber;
 
-    @Column(nullable = false)
-    private double lat;
 
-    @Column(nullable = false)
-    private double lan;
+    @Column(columnDefinition = "jsonb")
+    private String positions;
+
 
     @Column(name = "generated_at", nullable = false)
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")

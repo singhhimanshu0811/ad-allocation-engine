@@ -20,10 +20,11 @@ public class DeviceRouteEntity extends AuditableEntity {
     private Long id;
     //one assignment of device to a route, a device can have multiple assignments to different routes over time
 
-    @Column(name = "device_id", nullable = false, length = 16)
-    private String deviceId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "device_id", nullable = false)
+    private DeviceCredentialEntity deviceId;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "route_id", nullable = false)
     private RouteEntity route;
 

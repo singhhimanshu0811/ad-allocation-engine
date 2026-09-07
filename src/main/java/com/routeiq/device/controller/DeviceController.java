@@ -55,7 +55,7 @@ public class DeviceController {
     }
 
     @PostMapping(
-            value = "/saveGeoLocations",
+            value = "/geo",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_PLAIN_VALUE
     )
