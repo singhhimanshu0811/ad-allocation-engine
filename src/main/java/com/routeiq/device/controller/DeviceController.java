@@ -9,6 +9,7 @@ import com.routeiq.device.model.TaskResponse;
 import com.routeiq.device.model.RouteResponse;
 import com.routeiq.device.model.SaveTaskRequest;
 import com.routeiq.device.service.DeviceService;
+import com.routeiq.device.service.HeartbeatService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.MediaType;
@@ -22,8 +23,12 @@ public class DeviceController {
 
     private final DeviceService deviceService;
 
-    public DeviceController(DeviceService deviceService) {
+    private final HeartbeatService heartbeatService;
+
+    public DeviceController(DeviceService deviceService, HeartbeatService heartbeatService) {
+
         this.deviceService = deviceService;
+        this.heartbeatService = heartbeatService;
     }
 
     @GetMapping("/task")
@@ -72,9 +77,7 @@ public class DeviceController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_PLAIN_VALUE
     )
-    public String heartbeat(@Valid @RequestBody HeartbeatRequest request) {
-        return deviceService.heartbeat(
-                request
-        );
+    public void heartbeat(@Valid @RequestBody HeartbeatRequest request) {
+        heartbeatService.recordHeartBeat(request);
     }
 }
