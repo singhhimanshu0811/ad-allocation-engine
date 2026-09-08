@@ -3,6 +3,7 @@ package com.routeiq.device.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.routeiq.device.config.AllocationCostCalculator;
 import com.routeiq.device.entity.*;
 import com.routeiq.device.model.*;
 import com.routeiq.device.config.DeviceTaskProperties;
@@ -14,9 +15,18 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.modelmapper.ModelMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -33,10 +43,21 @@ public class DeviceService {
     private final RouteStopsRepository routeStopsRepository;
     private final RouteSpatialRepository routeSpatialRepository;
     private final DeviceCurrentStateRepository deviceCurrentStateRepository;
+    private final RouteCampaignCandidateRepository routeCampaignCandidateRepository;
+    private final SegmentHistoricalStatsRepository segmentHistoricalStatsRepository;
+    private final CampaignRepository campaignRepository;
+    private final HourlyAllocationRepository hourlyAllocationRepository;
+
+    @Autowired
+    private  AllocationCostCalculator allocationCostCalculator;
 
     private final ModelMapper modelMapper;
 
     private static final ObjectMapper mapper = new ObjectMapper();
+
+
+    public record EligiblePair(String deviceId, String campaignId, double cost, Instant predictedEntryTime) {}
+    public record AllocationResult(String deviceId, String campaignId, int allocatedPlays) {}
 
 
 
@@ -52,6 +73,10 @@ public class DeviceService {
                          RouteStopsRepository routeStopsRepository,
                          RouteSpatialRepository routeSpatialRepository,
                          DeviceCurrentStateRepository deviceCurrentStateRepository,
+                         RouteCampaignCandidateRepository routeCampaignCandidateRepository,
+                         SegmentHistoricalStatsRepository segmentHistoricalStatsRepository,
+                         CampaignRepository campaignRepository,
+                         HourlyAllocationRepository hourlyAllocationRepository,
                          EntityManager entityManager,
                          ModelMapper modelMapper) {
         this.deviceCredentialRepository = deviceCredentialRepository;
@@ -63,6 +88,10 @@ public class DeviceService {
         this.routeStopsRepository = routeStopsRepository;
         this.routeSpatialRepository = routeSpatialRepository;
         this.deviceCurrentStateRepository = deviceCurrentStateRepository;
+        this.routeCampaignCandidateRepository = routeCampaignCandidateRepository;
+        this.campaignRepository = campaignRepository;
+        this.segmentHistoricalStatsRepository = segmentHistoricalStatsRepository;
+        this.hourlyAllocationRepository = hourlyAllocationRepository;
         this.deviceTaskProperties = deviceTaskProperties;
         this.entityManager = entityManager;
         this.modelMapper = modelMapper;
@@ -145,10 +174,183 @@ public class DeviceService {
         }
     }
 
-    public List<ImageRow> getImages(String deviceId, GeoLocation location) {
+    public List<ImageRow> getContent(String deviceId, GeoLocation location) {
+
+        //step 1 : find active route matches
+
         return imageRepository.findByDeviceId(deviceId).stream()
                 .map(image -> new ImageRow(image.getImageUrl(), image.getTimestamp()))
                 .toList();
+    }
+
+
+    @Transactional
+    public void writeContentMetadatForWindow(Instant startWindow, Instant endWindow) {
+
+        // D1 — pull active campaigns
+        List<Campaign> campaigns = campaignRepository.findAllCampaignsWindow(startWindow, endWindow);;
+
+        List<String> campaignIds = campaigns.stream().map(Campaign::getId).toList();
+
+        // D2 — pull candidate routes for those campaigns (pre-pruned static geometry matches)
+        List<RouteCampaignCandidateEntity> routeCandidates =
+                routeCampaignCandidateRepository.findActiveRouteMatchesForCampaignIds(campaignIds);
+        List<Long> routeIds = routeCandidates.stream().map(RouteCampaignCandidateEntity::getRouteId).toList();
+
+        // D3 — resolve ALL devices currently active on each candidate route (not just one)
+        List<DeviceRouteEntity> devicesOnRoutes = deviceRouteRepository.findByRouteIdAndActive(routeIds);
+
+        // group by routeId -> list of devices (a route can have multiple concurrently active devices)
+        Map<Long, List<DeviceRouteEntity>> routeIdToDevices = devicesOnRoutes.stream()
+                .collect(Collectors.groupingBy(ds -> ds.getRoute().getRouteId()));
+
+        // D4 — pull live state for all resolved devices
+        List<String> deviceIds = devicesOnRoutes.stream()
+                .map(dr -> dr.getDevice().getDeviceId()).distinct().toList();
+        List<DeviceCurrentStateEntity> deviceCurrentStates = deviceCurrentStateRepository.findByDeviceIdIn(deviceIds);
+        Map<String, DeviceCurrentStateEntity> deviceCurrentStateMap = deviceCurrentStates.stream()
+                .collect(Collectors.toMap(DeviceCurrentStateEntity::getDeviceId, Function.identity()));
+
+        List<EligiblePair> eligiblePairs = new ArrayList<>();
+
+        // D5-D8 — for EVERY device on EVERY candidate route, predict + filter + cost
+        for (RouteCampaignCandidateEntity candidate : routeCandidates) {
+
+            List<DeviceRouteEntity> devicesForThisRoute = routeIdToDevices.get(candidate.getRouteId());
+            if (devicesForThisRoute == null || devicesForThisRoute.isEmpty()) continue; // no device on this route right now
+
+            Campaign campaign = campaigns.stream()
+                    .filter(c -> c.getId().equals(candidate.getCampaignId()))
+                    .findFirst().orElseThrow();
+
+            // iterate every device on this route — not just the first/only one
+            for (DeviceRouteEntity deviceRoute : devicesForThisRoute) {
+
+                String deviceId = deviceRoute.getDevice().getDeviceId();
+                DeviceCurrentStateEntity currentState = deviceCurrentStateMap.get(deviceId);
+                if (currentState == null) continue; // no live state yet for this device
+
+                double currentDistance = currentState.getDistanceAlongRoute();
+                double smoothedDelaySeconds = currentState.getSmoothedDelay();
+
+                // D5 — historical stats for segments between current position and entry/exit markers
+                List<SegmentHistoricalStatsEntity> segmentStats = segmentHistoricalStatsRepository
+                        .findSegmentsBetween(candidate.getRouteId(), currentDistance, candidate.getExitMarker(),
+                                getHourOfDay(startWindow), getDayOfWeek(startWindow));
+
+                double totalMeanSeconds = segmentStats.stream().mapToDouble(SegmentHistoricalStatsEntity::getMeanTime).sum();
+                double totalVariance = segmentStats.stream().mapToDouble(SegmentHistoricalStatsEntity::getVariance).sum();
+                double confidenceBandSeconds = Math.sqrt(totalVariance);
+
+                // D6 — (optional live traffic correction omitted here, would override nearest segment's mean)
+
+                // D7 — predicted arrival window
+                Instant predictedEntryTime = Instant.now()
+                        .plusSeconds((long) smoothedDelaySeconds)
+                        .plusSeconds((long) totalMeanSeconds);
+
+                // D8 — filter: does predicted window overlap this hour?
+                boolean overlaps = !predictedEntryTime.isAfter(endWindow)
+                        && !predictedEntryTime.plusSeconds((long) confidenceBandSeconds).isBefore(startWindow);
+
+                if (!overlaps) continue;
+
+                double distanceCost = allocationCostCalculator.computeDistanceCost(currentState, campaign);
+                double urgencyFactor = allocationCostCalculator.computeUrgencyFactor(campaign);
+//                double dwellPenalty = allocationCostCalculator.computeDwellPenalty(candidate, currentState, campaign);
+                double confidencePenalty = totalMeanSeconds == 0 ? 0 : confidenceBandSeconds / totalMeanSeconds;
+
+                double cost = distanceCost + urgencyFactor  + confidencePenalty;
+
+                eligiblePairs.add(new EligiblePair(deviceId, campaign.getId(), cost, predictedEntryTime));
+            }
+        }
+
+// //todo : when we have dedficit ledger
+// D9 — tiering: pull escalated/rescheduled campaigns
+//        Set<String> tier1CampaignIds = deficitLedgerRepository.findCampaignIdsByStatus("escalated_reschedule");
+//
+//        List<EligiblePair> tier1Pairs = eligiblePairs.stream()
+//                .filter(p -> tier1CampaignIds.contains(p.campaignId())).toList();
+//        List<EligiblePair> tier2Pairs = eligiblePairs.stream()
+//                .filter(p -> !tier1CampaignIds.contains(p.campaignId())).toList();
+//
+//        // D10/D11 — cost already computed above; run allocation solve, Tier 1 first against real capacity
+//
+//
+//        List<AllocationResult> tier1Allocations = allocationCostCalculator.allocateWaterFilling(tier1Pairs, campaigns);
+//        List<AllocationResult> tier2Allocations = allocationCostCalculator.allocateWaterFilling(tier2Pairs, campaigns);
+//
+//        List<AllocationResult> allAllocations = new ArrayList<>();
+//        allAllocations.addAll(tier1Allocations);
+//        allAllocations.addAll(tier2Allocations);
+
+        List<AllocationResult> allAllocations = allocationCostCalculator.allocateWaterFilling(eligiblePairs, campaigns);
+
+        // D12 — persist allocations
+        for (AllocationResult result : allAllocations) {
+            HourlyAllocationEntity allocation = new HourlyAllocationEntity();
+            allocation.setDeviceId(result.deviceId());
+            allocation.setCampaignId(result.campaignId());
+            allocation.setStartWindow(startWindow);
+            allocation.setEndWindow(endWindow);
+            allocation.setAllocatedPlays(result.allocatedPlays());
+
+            hourlyAllocationRepository.save(allocation);
+        }
+
+        // D13 — update campaign budgets
+        Map<String, Integer> playsByCampaign = allAllocations.stream()
+                .collect(Collectors.groupingBy(AllocationResult::campaignId,
+                        Collectors.summingInt(AllocationResult::allocatedPlays)));
+
+        for (Campaign campaign : campaigns) {
+            campaign.setImpressions(campaign.getImpressions() - 1);
+            campaignRepository.save(campaign);
+        }
+
+        //todo : decide how to deal with deficit : D14 — log deficits for unmet demand
+//        for (Campaign campaign : campaigns) {
+//            int playsNeeded = computePlaysNeeded(campaign);
+//            int playsAllocated = playsByCampaign.getOrDefault(campaign.getId(), 0);
+//            int deficit = playsNeeded - playsAllocated;
+//
+//            if (deficit > 0) {
+//                DeficitLedgerEntity ledger = deficitLedgerRepository
+//                        .findByCampaignIdAndHourWindowStart(campaign.getId(), startWindow)
+//                        .orElseGet(DeficitLedgerEntity::new);
+//
+//                ledger.setCampaignId(campaign.getId());
+//                ledger.setHourWindowStart(startWindow);
+//                ledger.setPlaysNeeded(playsNeeded);
+//                ledger.setPlaysAllocated(playsAllocated);
+//                ledger.setDeficit(deficit);
+//
+//                boolean hadDeviceCandidate = eligiblePairs.stream()
+//                        .anyMatch(p -> p.campaignId().equals(campaign.getId()));
+//                ledger.setReason(hadDeviceCandidate ? "starved_despite_availability" : "no_device_in_region");
+//
+//                int graceCycles = ledger.getGraceCyclesUsed() == null ? 0 : ledger.getGraceCyclesUsed();
+//                if (graceCycles >= GRACE_CYCLE_LIMIT) {
+//                    ledger.setStatus("paused_awaiting_decision");
+//                    campaign.setStatus("paused_awaiting_decision");
+//                    campaignRepository.save(campaign);
+//                    // trigger advertiser notification — async, outside this flow
+//                } else {
+//                    ledger.setGraceCyclesUsed(graceCycles + 1);
+//                    ledger.setStatus("auto_retry");
+//                }
+//                deficitLedgerRepository.save(ledger);
+//            }
+//        }
+    }
+
+    private int getHourOfDay(Instant instant) {
+        return instant.atZone(ZoneOffset.UTC).getHour();
+    }
+
+    private int getDayOfWeek(Instant instant) {
+        return instant.atZone(ZoneOffset.UTC).getDayOfWeek().getValue(); // 1 = Monday ... 7 = Sunday
     }
 
 

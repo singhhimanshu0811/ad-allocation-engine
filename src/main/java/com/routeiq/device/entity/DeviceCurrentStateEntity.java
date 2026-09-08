@@ -5,12 +5,18 @@ import jakarta.persistence.*;
 
 import java.time.Instant;
 
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.locationtech.jts.geom.Point;
 
-@Table(name = "device_current_state")
+@Table(name = "device_current_state",
+indexes = {
+                @Index(columnList = "device_id"),
+
+        })
 @Entity
-@Data
+@Setter
+@Getter
 public class DeviceCurrentStateEntity {
 
     @Id

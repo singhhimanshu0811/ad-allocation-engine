@@ -1,7 +1,9 @@
 package com.routeiq.device.entity;
 
 import jakarta.persistence.*;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -10,7 +12,9 @@ import java.time.Instant;
 @Table(name = "heartbeats", indexes = {
         @Index(name = "idx_heartbeats_device_received_at", columnList = "device_id,received_at")
 })
-@NoArgsConstructor(access = lombok.AccessLevel.PROTECTED)
+@NoArgsConstructor
+@Setter
+@Getter
 public class HeartbeatEntity extends AuditableEntity {
 
     @Id
@@ -32,7 +36,5 @@ public class HeartbeatEntity extends AuditableEntity {
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;
 
-    @Column(name = "expires_at", nullable = false)
-    private Instant expiresAt;
 
 }

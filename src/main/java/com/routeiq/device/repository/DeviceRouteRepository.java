@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.*;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -17,6 +18,14 @@ public interface DeviceRouteRepository extends JpaRepository<DeviceRouteEntity, 
     );
 
     Optional<DeviceRouteEntity> findByDeviceIdAndActiveTrue(String deviceId);
+
+    @Query("""
+            select d
+            from DeviceRouteEntity d
+            where d.route.routeId in :routeIds
+              and d.active = true
+            """)
+    List<DeviceRouteEntity> findByRouteIdAndActive(List<Long> routeIds);
 
     @Modifying
     @Query("""

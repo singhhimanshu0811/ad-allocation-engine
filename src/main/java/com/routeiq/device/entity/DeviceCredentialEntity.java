@@ -4,9 +4,13 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
 @Table(name = "devices_credential")
+@Setter
+@Getter
 public class DeviceCredentialEntity extends AuditableEntity {
 
     @Id
@@ -22,11 +26,4 @@ public class DeviceCredentialEntity extends AuditableEntity {
     protected DeviceCredentialEntity() {
     }
 
-    public String getSecretKey() {
-        return secretKey;
-    }
-
-    public boolean isEnabled() {
-        return enabled;
-    }
 }

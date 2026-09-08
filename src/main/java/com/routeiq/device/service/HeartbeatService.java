@@ -3,6 +3,7 @@ package com.routeiq.device.service;
 import com.routeiq.device.config.DelayKalmanFilter;
 import com.routeiq.device.entity.DeviceCurrentStateEntity;
 import com.routeiq.device.entity.DeviceRouteEntity;
+import com.routeiq.device.entity.HeartbeatEntity;
 import com.routeiq.device.entity.RouteStopEntity;
 import com.routeiq.device.model.HeartbeatRequest;
 import com.routeiq.device.repository.*;
@@ -115,9 +116,9 @@ public class HeartbeatService {
             // re-anchor to today's date, keeping only the time-of-day component
             LocalTime timeOfDay = interpolatedScheduledTime.atZone(ZoneOffset.UTC).toLocalTime();
             LocalDate today = pingTime.atZone(ZoneOffset.UTC).toLocalDate();
-            Instant normalizedScheduledTime = timeOfDay.atDate(today).toInstant(ZoneOffset.UTC);
+            Instant normalizedInterpolatedScheduledTime = timeOfDay.atDate(today).toInstant(ZoneOffset.UTC);
 
-            rawDelaySeconds = Duration.between(normalizedScheduledTime, pingTime).getSeconds();
+            rawDelaySeconds = Duration.between(normalizedInterpolatedScheduledTime, pingTime).getSeconds();
         }
 
         // else: before end/start of stop list — no valid bracket, skip delay calc for this ping
@@ -146,7 +147,14 @@ public class HeartbeatService {
         state.setUpdatedAt(pingTime);
         deviceCurrentStateRepository.save(state);
 
-        //step 7 : todo : append in historical log
+        //step 7 : store in heartbeat entity
+        HeartbeatEntity heartbeatEntity = new HeartbeatEntity();
+        heartbeatEntity.setDeviceId(deviceId);
+        heartbeatEntity.setDistanceAlongRoute(distanceAlongRoute);
+        heartbeatEntity.setReceivedAt(pingTime);
+        heartbeatEntity.setHeartbeat(true);
+        heartbeatEntity.setRouteId(routeId);
+        heartbeatRepository.save(heartbeatEntity);
 
     }
 }

@@ -1,15 +1,18 @@
 package com.routeiq.device.entity;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.*;
 import lombok.*;
 
 
-import java.time.Instant;
-
-
 @Entity
-@Table(name = "devices_routes")
+@Table(name = "devices_routes",
+        indexes = {
+                @Index(name = "idx_devices_routes_device_id", columnList = "device_id"),
+                @Index(name = "idx_devices_routes_route_id", columnList = "route_id"),
+                @Index(name = "idx_devices_routes_device_route", columnList = "device_id, route_id"),
+                @Index(name = "idx_devices_routes_route_active", columnList = "route_id, is_active"),
+                @Index(name = "idx_devices_routes_device_active", columnList = "device_id, is_active")
+        })
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
@@ -22,7 +25,7 @@ public class DeviceRouteEntity extends AuditableEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "device_id", nullable = false)
-    private DeviceCredentialEntity deviceId;
+    private DeviceCredentialEntity device;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "route_id", nullable = false)

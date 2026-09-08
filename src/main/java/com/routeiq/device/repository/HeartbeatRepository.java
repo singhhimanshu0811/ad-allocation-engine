@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.List;
 
 @Repository
 public interface HeartbeatRepository extends JpaRepository<HeartbeatEntity, Long> {
@@ -15,4 +16,7 @@ public interface HeartbeatRepository extends JpaRepository<HeartbeatEntity, Long
     @Modifying
     @Query("delete from HeartbeatEntity heartbeat where heartbeat.receivedAt < :cutoff")
     int deleteOlderThan(@Param("cutoff") Instant cutoff);
+
+
+    List<HeartbeatEntity> findByRouteIdAndReceivedTimeBetweenOrderByDeviceIdAscReceivedTimeAsc(Long routeId, Instant dayStart, Instant dayEnd);
 }
