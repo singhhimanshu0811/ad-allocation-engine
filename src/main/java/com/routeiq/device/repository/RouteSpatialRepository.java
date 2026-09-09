@@ -1,10 +1,14 @@
 package com.routeiq.device.repository;
 
+import com.routeiq.device.entity.RouteEntity;
 import org.locationtech.jts.geom.Point;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
-public interface RouteSpatialRepository {
+@Repository
+public interface RouteSpatialRepository extends JpaRepository<RouteEntity, Long> {
     @Query(value = """
         SELECT ST_LineLocatePoint(r.path::geometry, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
                * ST_Length(r.path::geography)

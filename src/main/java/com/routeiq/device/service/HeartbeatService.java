@@ -91,7 +91,7 @@ public class HeartbeatService {
         double distanceAlongRoute = routeSpatialRepository.locateDistanceAlongRoute(routeId, lat, lon);
 
         //step3 : find bracketing stops
-        List<RouteStopEntity> stops = routeStopsRepository.findByRouteIdOrderBySequenceNumberAsc(routeId);
+        List<RouteStopEntity> stops = routeStopsRepository.findByRouteIdOrderByStopSequenceNumberAsc(routeId);
 
 
         RouteStopEntity before = null, after = null;

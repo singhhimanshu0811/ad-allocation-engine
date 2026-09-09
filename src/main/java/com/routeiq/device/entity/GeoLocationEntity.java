@@ -13,7 +13,8 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "geo_locations", indexes = {
-        @Index(name = "idx_geo_locations_route_generated_at", columnList = "route_id,generated_at")
+        @Index(name = "idx_geo_locations_device_capture_session", columnList = "device_id,capture_session_id"),
+        @Index(name = "capture_session_id", columnList = "capture_session_id")
 })
 @NoArgsConstructor
 @Data
@@ -23,7 +24,7 @@ public class GeoLocationEntity extends AuditableEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "device_id", nullable = false)
+    @Column(name = "device_id", nullable = false, length = 16)
     private String deviceId;
 
     @Column(name = "capture_session_id", nullable = false)

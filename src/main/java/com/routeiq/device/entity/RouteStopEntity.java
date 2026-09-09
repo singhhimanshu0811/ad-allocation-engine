@@ -7,7 +7,10 @@ import org.locationtech.jts.geom.Point;
 import java.time.Instant;
 import java.time.LocalTime;
 
-@Table(name = "route_stops")
+@Table(name = "route_stops",
+    indexes = {
+        @Index(name= "idx_route_stops_route_id", columnList = "route_id")
+})
 @Entity
 @Data
 public class RouteStopEntity {

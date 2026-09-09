@@ -10,5 +10,5 @@ import java.util.UUID;
 @Repository
 public interface GeoLocationRepository extends JpaRepository<GeoLocationEntity, Long> {
 
-    List<GeoLocationEntity> findByCaptureSessionIdOrderByTimestampAsc(UUID captureSessionId);
+    List<GeoLocationEntity> findByCaptureSessionIdOrderByGeneratedAtAsc(UUID captureSessionId);
 }

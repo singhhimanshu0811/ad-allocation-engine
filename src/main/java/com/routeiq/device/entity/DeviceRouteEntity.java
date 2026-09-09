@@ -13,13 +13,14 @@ import lombok.*;
                 @Index(name = "idx_devices_routes_route_active", columnList = "route_id, is_active"),
                 @Index(name = "idx_devices_routes_device_active", columnList = "device_id, is_active")
         })
-@Data
+@Getter
+@Setter
 @AllArgsConstructor
 @NoArgsConstructor
 public class DeviceRouteEntity extends AuditableEntity {
 
     @Id
-    @GeneratedValue
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     //one assignment of device to a route, a device can have multiple assignments to different routes over time
 

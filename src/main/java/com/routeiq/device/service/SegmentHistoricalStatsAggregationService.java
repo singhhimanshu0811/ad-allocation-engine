@@ -40,12 +40,12 @@ public class SegmentHistoricalStatsAggregationService {
 
         for (RouteEntity route : allRoutes) {
             List<RouteStopEntity> stops = routeStopRepository
-                    .findByRouteIdOrderBySequenceNumberAsc(route.getRouteId());
+                    .findByRouteIdOrderByStopSequenceNumberAsc(route.getRouteId());
 
             if (stops.size() < 2) continue; // need at least 2 stops to form a segment
 
             List<HeartbeatEntity> pings = heartBeatRepository
-                    .findByRouteIdAndReceivedTimeBetweenOrderByDeviceIdAscReceivedTimeAsc(route.getRouteId(), dayStart, dayEnd);
+                    .findByRouteIdAndReceivedAtBetweenOrderByDeviceIdAscReceivedAtAsc(route.getRouteId(), dayStart, dayEnd);
 
             // group pings by device — each device's trip through the route is independent evidence
             Map<String, List<HeartbeatEntity>> pingsByDevice = pings.stream()

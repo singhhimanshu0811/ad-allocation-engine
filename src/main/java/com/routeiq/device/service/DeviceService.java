@@ -51,7 +51,6 @@ public class DeviceService {
     @Autowired
     private  AllocationCostCalculator allocationCostCalculator;
 
-    private final ModelMapper modelMapper;
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -78,8 +77,7 @@ public class DeviceService {
                          CampaignRepository campaignRepository,
                          PeriodicAllocationRepository periodicAllocationRepository,
                          DemoPeriodicAllocationRepository demoPeriodicAllocationRepository,
-                         EntityManager entityManager,
-                         ModelMapper modelMapper) {
+                         EntityManager entityManager) {
         this.deviceCredentialRepository = deviceCredentialRepository;
         this.geoLocationRepository = geoLocationRepository;
         this.heartbeatRepository = heartbeatRepository;
@@ -96,7 +94,6 @@ public class DeviceService {
         this.demoPeriodicAllocationRepository = demoPeriodicAllocationRepository;
         this.deviceTaskProperties = deviceTaskProperties;
         this.entityManager = entityManager;
-        this.modelMapper = modelMapper;
     }
 
     @Transactional
@@ -127,7 +124,7 @@ public class DeviceService {
     @Transactional
     public RouteResponse saveRoute(SaveRouteRequest request) {
 
-        List<GeoLocationEntity> geoLocationEntities = geoLocationRepository.findByCaptureSessionIdOrderByTimestampAsc(request.captureSessionId());
+        List<GeoLocationEntity> geoLocationEntities = geoLocationRepository.findByCaptureSessionIdOrderByGeneratedAtAsc(request.captureSessionId());
 
         Coordinate[] coords = geoLocationEntities.stream()
                 .map(p -> {

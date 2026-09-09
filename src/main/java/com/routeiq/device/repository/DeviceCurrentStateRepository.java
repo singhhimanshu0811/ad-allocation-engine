@@ -10,6 +10,6 @@ import java.util.List;
 @Repository
 public interface DeviceCurrentStateRepository extends JpaRepository<DeviceCurrentStateEntity, String> {
 
-    @Query("SELECT d FROM DeviceCurrentStateEntity d WHERE d.    d.deviceId IN :deviceIds")
+    @Query("SELECT d FROM DeviceCurrentStateEntity d WHERE d.deviceId IN :deviceIds")
     List<DeviceCurrentStateEntity> findByDeviceIdIn(List<String> deviceIds);
 }

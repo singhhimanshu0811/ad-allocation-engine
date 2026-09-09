@@ -9,6 +9,6 @@ import java.util.List;
 @Repository
 public interface RouteStopsRepository extends JpaRepository<RouteStopEntity, Long> {
 
-    List<RouteStopEntity> findByRouteIdOrderBySequenceNumberAsc(Long routeId);
+    List<RouteStopEntity> findByRouteIdOrderByStopSequenceNumberAsc(Long routeId);
 
 }

@@ -10,7 +10,8 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "heartbeats", indexes = {
-        @Index(name = "idx_heartbeats_device_received_at", columnList = "device_id,received_at")
+        @Index(name = "idx_heartbeats_device_received_at", columnList = "device_id,received_at"),
+        @Index(name = "idx_heartbeats_device_on_route", columnList = "device_id,route_id")
 })
 @NoArgsConstructor
 @Setter

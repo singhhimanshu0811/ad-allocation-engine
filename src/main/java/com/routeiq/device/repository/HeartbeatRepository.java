@@ -18,5 +18,5 @@ public interface HeartbeatRepository extends JpaRepository<HeartbeatEntity, Long
     int deleteOlderThan(@Param("cutoff") Instant cutoff);
 
 
-    List<HeartbeatEntity> findByRouteIdAndReceivedTimeBetweenOrderByDeviceIdAscReceivedTimeAsc(Long routeId, Instant dayStart, Instant dayEnd);
+    List<HeartbeatEntity> findByRouteIdAndReceivedAtBetweenOrderByDeviceIdAscReceivedAtAsc(Long routeId, Instant dayStart, Instant dayEnd);
 }

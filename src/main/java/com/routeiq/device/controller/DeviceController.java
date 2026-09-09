@@ -1,6 +1,6 @@
 package com.routeiq.device.controller;
 
-import com.routeiq.device.model.GetContentRequest;
+import com.routeiq.device.model.GetImagesRequest;
 import com.routeiq.device.model.HeartbeatRequest;
 import com.routeiq.device.model.ImageRow;
 import com.routeiq.device.model.SaveGeoLocationsPingRequest;
@@ -68,7 +68,7 @@ public class DeviceController {
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE
     )
-    public List<ImageRow> getContentForDevice(@Valid @RequestBody GetContentRequest request) {
+    public List<ImageRow> getContentForDevice(@Valid @RequestBody GetImagesRequest request) {
         return deviceService.getContent(request.deviceId(), request.location());
     }
 

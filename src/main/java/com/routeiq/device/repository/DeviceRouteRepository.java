@@ -11,13 +11,26 @@ import java.util.Optional;
 @Repository
 public interface DeviceRouteRepository extends JpaRepository<DeviceRouteEntity, Long> {
 
+    @Query("""
+            select d
+            from DeviceRouteEntity d
+            where d.device.deviceId = :deviceId and 
+                        d.fromLocation = :fromLocation and d.toLocation = :toLocation
+              
+            """)
     java.util.Optional<DeviceRouteEntity> findByDeviceIdAndFromLocationAndToLocation(
-            String deviceId,
-            String fromLocation,
-            String toLocation
+            @Param("deviceId")String deviceId,
+            @Param("fromLocation") String fromLocation,
+            @Param("toLocation") String toLocation
     );
 
-    Optional<DeviceRouteEntity> findByDeviceIdAndActiveTrue(String deviceId);
+    @Query("""
+            select d
+            from DeviceRouteEntity d
+            where d.device.deviceId = :deviceId
+              
+            """)
+    Optional<DeviceRouteEntity> findByDeviceIdAndActiveTrue(@Param("deviceId") String deviceId);
 
     @Query("""
             select d
@@ -33,7 +46,7 @@ public interface DeviceRouteRepository extends JpaRepository<DeviceRouteEntity, 
             set route.active = false,
                 route.updatedAt = CURRENT_TIMESTAMP,
                 route.version = route.version + 1
-            where route.deviceId = :deviceId
+            where route.device.deviceId = :deviceId
               and route.active = true
             """)
     int deactivateActiveRoute(@Param("deviceId") String deviceId);

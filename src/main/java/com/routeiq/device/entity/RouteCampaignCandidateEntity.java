@@ -7,12 +7,13 @@ import lombok.Data;
 @Entity
 @Table(name = "route_campaign_candidates",
         indexes = {
-                @Index(columnList = "routeId"),
-                @Index(columnList = "campaignId")
+                @Index(columnList = "route_id"),
+                @Index(columnList = "campaign_id"),
+                @Index(columnList = "route_id, campaign_id"),
         })
 public class RouteCampaignCandidateEntity {
     @Id
-    @GeneratedValue
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(name = "route_id", nullable = false)

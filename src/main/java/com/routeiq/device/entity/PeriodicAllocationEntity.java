@@ -8,16 +8,19 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
-@Table(name = "hourly_allocation",
+@Entity
+@Table(name = "periodic_allocation",
         indexes = {
                 @Index(columnList = "device_id, start_window, end_window"),
+                @Index(columnList = "device_id, end_window"),
+                @Index(columnList = "device_id, start_window"),
         })
 @Setter
 @Getter
 public class PeriodicAllocationEntity {
 
     @Column(name = "id", nullable = false)
-    @GeneratedValue
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Id
     Long id;
 

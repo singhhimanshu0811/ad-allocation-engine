@@ -2,11 +2,14 @@ package com.routeiq.device.entity;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.locationtech.jts.geom.LineString;
 
 @Table(name = "routes")
 @Entity
-@Data
+@Setter
+@Getter
 public class RouteEntity {
 
     @Id
