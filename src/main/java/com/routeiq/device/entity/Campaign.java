@@ -2,6 +2,7 @@ package com.routeiq.device.entity;
 
 import com.routeiq.device.state.CampaignState;
 import jakarta.persistence.*;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 

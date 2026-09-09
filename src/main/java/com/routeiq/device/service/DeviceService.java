@@ -16,15 +16,14 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.AutoConfigureOrder;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -46,7 +45,8 @@ public class DeviceService {
     private final RouteCampaignCandidateRepository routeCampaignCandidateRepository;
     private final SegmentHistoricalStatsRepository segmentHistoricalStatsRepository;
     private final CampaignRepository campaignRepository;
-    private final HourlyAllocationRepository hourlyAllocationRepository;
+    private final PeriodicAllocationRepository periodicAllocationRepository;
+    private final DemoPeriodicAllocationRepository demoPeriodicAllocationRepository;
 
     @Autowired
     private  AllocationCostCalculator allocationCostCalculator;
@@ -76,7 +76,8 @@ public class DeviceService {
                          RouteCampaignCandidateRepository routeCampaignCandidateRepository,
                          SegmentHistoricalStatsRepository segmentHistoricalStatsRepository,
                          CampaignRepository campaignRepository,
-                         HourlyAllocationRepository hourlyAllocationRepository,
+                         PeriodicAllocationRepository periodicAllocationRepository,
+                         DemoPeriodicAllocationRepository demoPeriodicAllocationRepository,
                          EntityManager entityManager,
                          ModelMapper modelMapper) {
         this.deviceCredentialRepository = deviceCredentialRepository;
@@ -91,7 +92,8 @@ public class DeviceService {
         this.routeCampaignCandidateRepository = routeCampaignCandidateRepository;
         this.campaignRepository = campaignRepository;
         this.segmentHistoricalStatsRepository = segmentHistoricalStatsRepository;
-        this.hourlyAllocationRepository = hourlyAllocationRepository;
+        this.periodicAllocationRepository = periodicAllocationRepository;
+        this.demoPeriodicAllocationRepository = demoPeriodicAllocationRepository;
         this.deviceTaskProperties = deviceTaskProperties;
         this.entityManager = entityManager;
         this.modelMapper = modelMapper;
@@ -185,7 +187,7 @@ public class DeviceService {
 
 
     @Transactional
-    public void writeContentMetadatForWindow(Instant startWindow, Instant endWindow) {
+    public void writeContentMetadatForWindow(Instant startWindow, Instant endWindow, Boolean demoModeForFullDay) {
 
         // D1 — pull active campaigns
         List<Campaign> campaigns = campaignRepository.findAllCampaignsWindow(startWindow, endWindow);;
@@ -285,27 +287,44 @@ public class DeviceService {
 //        allAllocations.addAll(tier1Allocations);
 //        allAllocations.addAll(tier2Allocations);
 
-        List<AllocationResult> allAllocations = allocationCostCalculator.allocateWaterFilling(eligiblePairs, campaigns);
+        List<AllocationResult> allAllocations = allocationCostCalculator.allocateMinCostFlow(eligiblePairs, campaigns);
+
+        List<PeriodicAllocationEntity>periodicAllocationEntities = new ArrayList<>();
 
         // D12 — persist allocations
         for (AllocationResult result : allAllocations) {
-            HourlyAllocationEntity allocation = new HourlyAllocationEntity();
+            PeriodicAllocationEntity allocation = new PeriodicAllocationEntity();
             allocation.setDeviceId(result.deviceId());
             allocation.setCampaignId(result.campaignId());
             allocation.setStartWindow(startWindow);
             allocation.setEndWindow(endWindow);
             allocation.setAllocatedPlays(result.allocatedPlays());
+            ZoneId zoneId = ZoneId.of("Asia/Kolkata");
+            allocation.setDateOfAllocation(endWindow.atZone(zoneId).toLocalDate());
+            allocation.setLocalStartTime(startWindow.atZone(zoneId).toLocalTime());
+            allocation.setLocalEndTime(endWindow.atZone(zoneId).toLocalTime());
 
-            hourlyAllocationRepository.save(allocation);
+            periodicAllocationEntities.add(allocation);
+
+        }
+
+        if(demoModeForFullDay){
+            demoPeriodicAllocationRepository.saveAll(periodicAllocationEntities);
+        }
+        else{
+            //not a demo - hourly cycle
+            periodicAllocationRepository.saveAll(periodicAllocationEntities);
         }
 
         // D13 — update campaign budgets
-        Map<String, Integer> playsByCampaign = allAllocations.stream()
-                .collect(Collectors.groupingBy(AllocationResult::campaignId,
-                        Collectors.summingInt(AllocationResult::allocatedPlays)));
+        Map<String, Integer> playsByCampaign = periodicAllocationEntities.stream()
+                .collect(Collectors.groupingBy(
+                        PeriodicAllocationEntity::getCampaignId,
+                        Collectors.summingInt(PeriodicAllocationEntity::getAllocatedPlays)));
 
         for (Campaign campaign : campaigns) {
-            campaign.setImpressions(campaign.getImpressions() - 1);
+            Integer playsThisHour = playsByCampaign.getOrDefault(campaign.getId(), 0L);
+            campaign.setImpressions(campaign.getImpressions() - playsThisHour);
             campaignRepository.save(campaign);
         }
 

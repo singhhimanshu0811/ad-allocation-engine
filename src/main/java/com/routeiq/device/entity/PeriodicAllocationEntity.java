@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Table(name = "hourly_allocation",
         indexes = {
@@ -12,7 +14,7 @@ import java.time.Instant;
         })
 @Setter
 @Getter
-public class HourlyAllocationEntity {
+public class PeriodicAllocationEntity {
 
     @Column(name = "id", nullable = false)
     @GeneratedValue
@@ -29,6 +31,15 @@ public class HourlyAllocationEntity {
 
     @Column(name = "end_window", nullable = false)
     Instant endWindow;
+
+    @Column
+    LocalDate dateOfAllocation;
+
+    @Column
+    LocalTime localStartTime;
+
+    @Column
+    LocalTime localEndTime;
 
     @Column(name = "allocated_plays", nullable = false)
     int allocatedPlays;

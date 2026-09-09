@@ -2,8 +2,8 @@ package com.routeiq.device.config;
 
 import com.routeiq.device.entity.Campaign;
 import com.routeiq.device.entity.DeviceCurrentStateEntity;
-import com.routeiq.device.entity.RouteCampaignCandidateEntity;
-import com.routeiq.device.service.DeviceService;
+import com.routeiq.device.service.DeviceService.EligiblePair;
+import com.routeiq.device.service.DeviceService.AllocationResult;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
@@ -12,8 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 
 @Component
 public class AllocationCostCalculator {
@@ -26,6 +25,8 @@ public class AllocationCostCalculator {
     private static final Integer AD_DURATION_SECONDS = 60; // default ad duration in seconds
 
     private Integer DEVICE_HOURLY_CAPACITY_SECONDS = 3600; // 1 hour in seconds - WINDOW SIZE IS 1 HOUR
+
+    private static Long COST_SCALE = 1000L;
 
     private final GeometryFactory gf = new GeometryFactory(new PrecisionModel(), 4326);
 
@@ -83,8 +84,61 @@ public class AllocationCostCalculator {
     }
 
 
-    public List<DeviceService.AllocationResult> allocateWaterFilling(List<DeviceService.EligiblePair> tier1Pairs, List<Campaign> campaigns) {
-        //todo : complete this function
-        return List.of();
+    public List<AllocationResult> allocateMinCostFlow(List<EligiblePair> pairs,
+                                                      List<Campaign> campaigns
+                                                                     ) {
+        if (pairs.isEmpty()) return List.of();
+
+        List<String> campaignIds = pairs.stream().map(EligiblePair::campaignId).distinct().toList();
+        List<String> deviceIds = pairs.stream().map(EligiblePair::deviceId).distinct().toList();
+
+        Map<String, Integer> campaignIndex = new HashMap<>();
+        for (int i = 0; i < campaignIds.size(); i++) campaignIndex.put(campaignIds.get(i), i);
+        Map<String, Integer> deviceIndex = new HashMap<>();
+        for (int i = 0; i < deviceIds.size(); i++) deviceIndex.put(deviceIds.get(i), i);
+
+        int source = 0;
+        int campaignOffset = 1;
+        int deviceOffset = campaignOffset + campaignIds.size();
+        int sink = deviceOffset + deviceIds.size();
+
+        MinCostFlow mcf = new MinCostFlow(sink + 1);
+//source edges
+        for (String campaignId : campaignIds) {
+            Campaign c = campaigns.stream().filter(camp -> camp.getId().equals(campaignId)).findFirst().orElseThrow();
+            mcf.addEdge(source, campaignOffset + campaignIndex.get(campaignId), c.getImpressions(), 0);
+        }
+
+        Map<String, Integer> pairEdgeIndex = new HashMap<>();
+        for (EligiblePair pair : pairs) {
+
+            long capacityPlays = (long) (DEVICE_HOURLY_CAPACITY_SECONDS / AD_DURATION_SECONDS);
+            if (capacityPlays <= 0) continue;
+
+            int from = campaignOffset + campaignIndex.get(pair.campaignId());
+            int to = deviceOffset + deviceIndex.get(pair.deviceId());
+            long scaledCost = Math.round(pair.cost() * COST_SCALE);
+
+            int forwardEdgeId = mcf.edgeCount();
+            mcf.addEdge(from, to, capacityPlays, scaledCost);
+            pairEdgeIndex.put(pair.campaignId() + "|" + pair.deviceId(), forwardEdgeId);
+        }
+//sin edges
+        for (String deviceId : deviceIds) {
+            long deviceCapacityPlays = (long) (DEVICE_HOURLY_CAPACITY_SECONDS / AD_DURATION_SECONDS);
+            mcf.addEdge(deviceOffset + deviceIndex.get(deviceId), sink, deviceCapacityPlays, 0);
+        }
+
+        mcf.run(source, sink);
+
+        List<AllocationResult> results = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : pairEdgeIndex.entrySet()) {
+            String[] parts = entry.getKey().split("\\|");
+            String campaignId = String.valueOf(parts[0]);
+            String deviceId = parts[1];
+            long flow = mcf.getFlowOnEdge(entry.getValue());
+            if (flow > 0) results.add(new AllocationResult(deviceId, campaignId, (int) flow));
+        }
+        return results;
     }
 }
