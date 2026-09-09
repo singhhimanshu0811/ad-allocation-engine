@@ -323,7 +323,7 @@ public class DeviceService {
                         Collectors.summingInt(PeriodicAllocationEntity::getAllocatedPlays)));
 
         for (Campaign campaign : campaigns) {
-            Integer playsThisHour = playsByCampaign.getOrDefault(campaign.getId(), 0L);
+            Integer playsThisHour = playsByCampaign.getOrDefault(campaign.getId(), 0);
             campaign.setImpressions(campaign.getImpressions() - playsThisHour);
             campaignRepository.save(campaign);
         }
