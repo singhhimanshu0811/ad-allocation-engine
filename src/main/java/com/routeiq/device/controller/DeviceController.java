@@ -13,6 +13,7 @@ import com.routeiq.device.service.HeartbeatService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -57,10 +58,11 @@ public class DeviceController {
     @PostMapping(
             value = "/geo",
             consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE
+            produces = MediaType.APPLICATION_JSON_VALUE
     )
-    public Boolean saveGeoLocations(@Valid @RequestBody SaveGeoLocationsPingRequest request) {
-        return deviceService.saveGeoLocations(request);
+    public ResponseEntity<Boolean> saveGeoLocations(@Valid @RequestBody SaveGeoLocationsPingRequest request) {
+        boolean result = deviceService.saveGeoLocations(request);
+        return result ? ResponseEntity.ok(true) : ResponseEntity.badRequest().body(false);
     }
 
     @GetMapping(

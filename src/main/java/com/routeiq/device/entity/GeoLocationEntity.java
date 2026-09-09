@@ -5,6 +5,8 @@ import com.routeiq.device.model.GeoLocation;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 
 import java.time.Instant;
@@ -33,8 +35,8 @@ public class GeoLocationEntity extends AuditableEntity {
     @Column(name = "sequence_number", nullable = false)
     private Long sequenceNumber;
 
-
-    @Column(columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "positions")
     private String positions;
 
 

@@ -8,7 +8,7 @@ import java.time.Instant;
 public record HeartbeatRequest(
         @NotBlank String deviceId,
         @NotNull Boolean heartbeat,
-        @NotBlank double lat,
-        @NotBlank double lon,
-        @NotBlank Instant pingTime
-        ) {}
+        @NotNull Double lat,
+        @NotNull Double lon,
+        @NotNull Instant pingTime
+) {}

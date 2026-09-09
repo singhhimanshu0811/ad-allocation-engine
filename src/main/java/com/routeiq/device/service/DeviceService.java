@@ -3,6 +3,8 @@ package com.routeiq.device.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.routeiq.device.config.AllocationCostCalculator;
 import com.routeiq.device.entity.*;
 import com.routeiq.device.model.*;
@@ -52,7 +54,9 @@ public class DeviceService {
     private  AllocationCostCalculator allocationCostCalculator;
 
 
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())//needed so that time can be saved in jsonb module
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
 
     public record EligiblePair(String deviceId, String campaignId, double cost, Instant predictedEntryTime) {}
@@ -160,7 +164,7 @@ public class DeviceService {
             geoLocation.setPositions(mapper.writeValueAsString(request.locations()));
             geoLocation.setSequenceNumber(request.sequenceNumber());
 
-            geoLocation.setGeneratedAt(java.time.Instant.now());
+            geoLocation.setGeneratedAt(Instant.now());
 
             geoLocationRepository.save(geoLocation);
 
