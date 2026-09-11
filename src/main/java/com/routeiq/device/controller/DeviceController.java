@@ -1,13 +1,6 @@
 package com.routeiq.device.controller;
 
-import com.routeiq.device.model.GetImagesRequest;
-import com.routeiq.device.model.HeartbeatRequest;
-import com.routeiq.device.model.ImageRow;
-import com.routeiq.device.model.SaveGeoLocationsPingRequest;
-import com.routeiq.device.model.SaveRouteRequest;
-import com.routeiq.device.model.TaskResponse;
-import com.routeiq.device.model.RouteResponse;
-import com.routeiq.device.model.SaveTaskRequest;
+import com.routeiq.device.model.*;
 import com.routeiq.device.service.DeviceService;
 import com.routeiq.device.service.HeartbeatService;
 import jakarta.validation.Valid;
@@ -81,5 +74,16 @@ public class DeviceController {
     )
     public void heartbeat(@Valid @RequestBody HeartbeatRequest request) {
         heartbeatService.recordHeartBeat(request);
+    }
+
+    //todo : this controller should only be called by admins - manually - maybe something like SR authentication required
+
+    @PostMapping(
+            value = "/map-device-to-route",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_PLAIN_VALUE
+    )
+    public void mapDeviceToRoute(@Valid @RequestBody DeviceToRouteRequest request) {
+        deviceService.assignRouteToDevice(request.deviceId(), request.routeId());
     }
 }

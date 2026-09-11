@@ -12,7 +12,7 @@ public interface RouteSpatialRepository extends JpaRepository<RouteEntity, Long>
     @Query(value = """
         SELECT ST_LineLocatePoint(r.path::geometry, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
                * ST_Length(r.path::geography)
-        FROM routes r WHERE r.id = :routeId
+        FROM routes r WHERE r.route_id = :routeId
         """, nativeQuery = true)
     Double locateDistanceAlongRoute(@Param("routeId") Long routeId,
                                     @Param("lat") double lat,

@@ -84,7 +84,7 @@ public class HeartbeatService {
             return;
         }
 
-
+//each device id will have only one route mapped to it - so we can safely extract route id from here
         Long routeId = optionalAssignment.get().getRoute().getRouteId();
 
         //step2 = find the distance along the route for the given lat/lon for given stops

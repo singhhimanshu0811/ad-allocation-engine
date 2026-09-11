@@ -9,7 +9,8 @@ import java.time.LocalTime;
 
 @Table(name = "route_stops",
     indexes = {
-        @Index(name= "idx_route_stops_route_id", columnList = "route_id")
+        @Index(name= "idx_route_stops_route_id", columnList = "route_id"),
+            @Index(name = "idx_route_id_and_sequence_number", columnList = "route_id, stop_sequence_number")
 })
 @Entity
 @Data

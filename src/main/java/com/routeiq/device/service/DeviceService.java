@@ -13,9 +13,9 @@ import com.routeiq.device.repository.*;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.PrecisionModel;
+import org.locationtech.jts.geom.*;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -32,6 +32,8 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class DeviceService {
+    @Autowired
+    private RouteRepository routeRepository;
 
     private final DeviceCredentialRepository deviceCredentialRepository;
     private final GeoLocationRepository geoLocationRepository;
@@ -150,6 +152,8 @@ public class DeviceService {
         RouteEntity route = new RouteEntity();
         route.setRouteName(request.routeName());
         route.setPath(gf.createLineString(coords));
+
+        route = routeRepository.save(route);
 
         return new RouteResponse(route.getRouteId());
     }
@@ -371,6 +375,37 @@ public class DeviceService {
 
     private int getDayOfWeek(Instant instant) {
         return instant.atZone(ZoneOffset.UTC).getDayOfWeek().getValue(); // 1 = Monday ... 7 = Sunday
+    }
+
+
+
+    @Transactional
+    public DeviceRouteEntity assignRouteToDevice(String deviceId, Long routeId) {
+
+        // Use getReference to avoid an extra SELECT query; sets up proxies for the foreign keys
+        DeviceCredentialEntity deviceProxy = entityManager.getReference(DeviceCredentialEntity.class, deviceId);
+        RouteEntity routeProxy = entityManager.getReference(RouteEntity.class, routeId);
+
+        Pair<String, String>locations = extractPoints(routeProxy.getPath());
+
+        DeviceRouteEntity assignment = new DeviceRouteEntity();
+        assignment.setDevice(deviceProxy);
+        assignment.setRoute(routeProxy);
+        assignment.setFromLocation(locations.getLeft());
+        assignment.setToLocation(locations.getRight());
+        assignment.setActive(true);
+
+        return deviceRouteRepository.save(assignment);
+    }
+
+    private Pair<String, String> extractPoints(LineString path) {
+        if (path == null || path.isEmpty()) {
+            return Pair.of(null, null);
+        }
+        Point startPoint = path.getStartPoint();
+        Point endPoint = path.getEndPoint();
+
+        return Pair.of(startPoint.toString(), endPoint.toString());
     }
 
 
