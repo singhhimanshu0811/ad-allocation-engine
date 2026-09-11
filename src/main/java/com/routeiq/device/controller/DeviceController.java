@@ -9,6 +9,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.*;
 import java.util.List;
 
 @RestController
@@ -85,5 +86,34 @@ public class DeviceController {
     )
     public void mapDeviceToRoute(@Valid @RequestBody DeviceToRouteRequest request) {
         deviceService.assignRouteToDevice(request.deviceId(), request.routeId());
+    }
+
+    @PostMapping(
+            value = "/periodic-allocation",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_PLAIN_VALUE
+    )
+    public void runPeriodicAllocation(@RequestBody AllocationTimeIntervalModel model){
+        ZoneId indiaZone = ZoneId.of("Asia/Kolkata");
+
+        LocalDateTime localDateTime = LocalDateTime.of(model.startDate(), model.startTime());
+        Instant startInstant = localDateTime.atZone(indiaZone).toInstant();
+
+        localDateTime = LocalDateTime.of(model.endDate(), model.endTime());
+        Instant endInstant = localDateTime.atZone(indiaZone).toInstant();
+
+        deviceService.writeContentMetadatForWindow(startInstant, endInstant, false);
+    }
+
+    @PostMapping(
+            value = "/periodic-allocation-demo",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.TEXT_PLAIN_VALUE
+    )
+    public void runPeriodicAllocationDemo(LocalDate localDate){
+        Instant earliestInstant = localDate.atStartOfDay(ZoneOffset.UTC).toInstant();
+        Instant latestInstant = localDate.atTime(23, 59, 59, 999_999_999).toInstant(ZoneOffset.UTC);
+
+        deviceService.writeContentMetadatForWindow(earliestInstant, latestInstant, true);
     }
 }

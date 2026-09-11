@@ -10,6 +10,6 @@ import java.util.List;
 
 public interface CampaignRepository extends JpaRepository<Campaign, String> {
 
-    @Query("SELECT c FROM Campaign c WHERE  (c.startInstant >= :windowStart AND c.endInstant <= :windowEnd)")
+    @Query("SELECT c FROM Campaign c WHERE c.startInstant <= :windowEnd AND c.endInstant >= :windowStart")
     List<Campaign> findAllCampaignsWindow(@Param("windowStart") Instant windowStart, @Param("windowEnd") Instant windowEnd);
 }
