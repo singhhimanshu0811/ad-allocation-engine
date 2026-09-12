@@ -2,6 +2,7 @@ package com.routeiq.device.entity;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import org.springframework.util.RouteMatcher;
 
 @Data
 @Entity
@@ -16,11 +17,13 @@ public class RouteCampaignCandidateEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "route_id", nullable = false)
-    private Long routeId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "route_id", nullable = false, foreignKey = @ForeignKey(name = "fk_route_candidate"))
+    private RouteEntity route;
 
-    @Column(name = "campaign_id", nullable = false)
-    private String campaignId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "campaign_id", nullable = false, foreignKey = @ForeignKey(name = "fk_campaign_candidate"))
+    private Campaign campaign;
 
     @Column(name = "entry_marker", nullable = false)
     private Double entryMarker;

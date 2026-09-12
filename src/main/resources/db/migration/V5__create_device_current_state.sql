@@ -3,8 +3,6 @@ CREATE TABLE device_current_state (
                                       current_route_id BIGINT NOT NULL,
                                       position geography(Point, 4326) NOT NULL,
                                       distance_along_route DOUBLE PRECISION NOT NULL,
-                                      smoothed_delay DOUBLE PRECISION NOT NULL,
-                                      error_covariance DOUBLE PRECISION NOT NULL,
                                       updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
 
                                       CONSTRAINT fk_device_current_state_route

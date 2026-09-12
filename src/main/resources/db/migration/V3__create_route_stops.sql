@@ -15,3 +15,6 @@ CREATE TABLE route_stops (
 
 CREATE INDEX idx_route_stops_route_id
     ON route_stops (route_id);
+
+CREATE INDEX idx_route_stops_perf
+    ON route_stops (route_id, stop_sequence_number ASC);

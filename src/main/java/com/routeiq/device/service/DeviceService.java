@@ -23,9 +23,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -40,14 +38,12 @@ public class DeviceService {
     private final HeartbeatRepository heartbeatRepository;
     private final ImageRepository imageRepository;
     private final DeviceTaskRepository deviceTaskRepository;
-    private final DeviceRouteRepository deviceRouteRepository;
     private final DeviceTaskProperties deviceTaskProperties;
     private final EntityManager entityManager;
     private final RouteStopsRepository routeStopsRepository;
     private final RouteSpatialRepository routeSpatialRepository;
     private final DeviceCurrentStateRepository deviceCurrentStateRepository;
     private final RouteCampaignCandidateRepository routeCampaignCandidateRepository;
-    private final SegmentHistoricalStatsRepository segmentHistoricalStatsRepository;
     private final CampaignRepository campaignRepository;
     private final PeriodicAllocationRepository periodicAllocationRepository;
     private final DemoPeriodicAllocationRepository demoPeriodicAllocationRepository;
@@ -73,13 +69,11 @@ public class DeviceService {
                          HeartbeatRepository heartbeatRepository,
                          ImageRepository imageRepository,
                          DeviceTaskRepository deviceTaskRepository,
-                         DeviceRouteRepository deviceRouteRepository,
                          DeviceTaskProperties deviceTaskProperties,
                          RouteStopsRepository routeStopsRepository,
                          RouteSpatialRepository routeSpatialRepository,
                          DeviceCurrentStateRepository deviceCurrentStateRepository,
                          RouteCampaignCandidateRepository routeCampaignCandidateRepository,
-                         SegmentHistoricalStatsRepository segmentHistoricalStatsRepository,
                          CampaignRepository campaignRepository,
                          PeriodicAllocationRepository periodicAllocationRepository,
                          DemoPeriodicAllocationRepository demoPeriodicAllocationRepository,
@@ -89,13 +83,11 @@ public class DeviceService {
         this.heartbeatRepository = heartbeatRepository;
         this.imageRepository = imageRepository;
         this.deviceTaskRepository = deviceTaskRepository;
-        this.deviceRouteRepository = deviceRouteRepository;
         this.routeStopsRepository = routeStopsRepository;
         this.routeSpatialRepository = routeSpatialRepository;
         this.deviceCurrentStateRepository = deviceCurrentStateRepository;
         this.routeCampaignCandidateRepository = routeCampaignCandidateRepository;
         this.campaignRepository = campaignRepository;
-        this.segmentHistoricalStatsRepository = segmentHistoricalStatsRepository;
         this.periodicAllocationRepository = periodicAllocationRepository;
         this.demoPeriodicAllocationRepository = demoPeriodicAllocationRepository;
         this.deviceTaskProperties = deviceTaskProperties;
@@ -191,221 +183,171 @@ public class DeviceService {
     }
 
 
+
+
     @Transactional
     public void writeContentMetadatForWindow(Instant startWindow, Instant endWindow, Boolean demoModeForFullDay) {
 
-        // D1 — pull active campaigns
-        List<Campaign> campaigns = campaignRepository.findAllCampaignsWindow(startWindow, endWindow);;
+        // 1. Active campaigns for this window
+        List<Campaign> campaigns = campaignRepository.findAllCampaignsWindow(startWindow, endWindow);
+//if no campaigns return
+        if (campaigns.isEmpty()) {
+            return;
+        }
 
-        List<String> campaignIds = campaigns.stream().map(Campaign::getId).toList();
+        Map<String, Campaign> campaignMap = campaigns.stream().collect(Collectors.toMap(Campaign::getId, Function.identity()));
 
-        // D2 — pull candidate routes for those campaigns (pre-pruned static geometry matches)
-        List<RouteCampaignCandidateEntity> routeCandidates =
-                routeCampaignCandidateRepository.findActiveRouteMatchesForCampaignIds(campaignIds);
-        List<Long> routeIds = routeCandidates.stream().map(RouteCampaignCandidateEntity::getRouteId).toList();
+        // 2. Devices that are currently active
+        List<String> deviceIds = deviceCredentialRepository.findAllActiveDevices().stream().map(DeviceCredentialEntity::getDeviceId).toList();
 
-        // D3 — resolve ALL devices currently active on each candidate route (not just one)
-        List<DeviceRouteEntity> devicesOnRoutes = deviceRouteRepository.findByRouteIdAndActive(routeIds);
+        if (deviceIds.isEmpty()) {
+            return;
+        }
 
-        // group by routeId -> list of devices (a route can have multiple concurrently active devices)
-        Map<Long, List<DeviceRouteEntity>> routeIdToDevices = devicesOnRoutes.stream()
-                .collect(Collectors.groupingBy(ds -> ds.getRoute().getRouteId()));
+        //* 3. Get recent heartbeats for ALL devices
+        List<HeartbeatEntity> heartbeats = heartbeatRepository.findRecentHeartbeats(deviceIds);
 
-        // D4 — pull live state for all resolved devices
-        List<String> deviceIds = devicesOnRoutes.stream()
-                .map(dr -> dr.getDevice().getDeviceId()).distinct().toList();
-        List<DeviceCurrentStateEntity> deviceCurrentStates = deviceCurrentStateRepository.findByDeviceIdIn(deviceIds);
-        Map<String, DeviceCurrentStateEntity> deviceCurrentStateMap = deviceCurrentStates.stream()
-                .collect(Collectors.toMap(DeviceCurrentStateEntity::getDeviceId, Function.identity()));
+        Map<String, List<HeartbeatEntity>> heartbeatsByDevice = heartbeats.stream().
+                collect(Collectors.groupingBy(HeartbeatEntity::getDeviceId));
+
+       //for each device figure out route by 5 previous route pings and then mode
+        Map<String, Long> deviceToRoute = new HashMap<>();
+
+        for (String deviceId : deviceIds) {
+
+            List<HeartbeatEntity> deviceHeartbeats = heartbeatsByDevice.getOrDefault(deviceId, Collections.emptyList());
+
+            deviceHeartbeats.stream()
+                    .limit(5)
+                    .map(HeartbeatEntity::getRouteId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.groupingBy(
+                            Function.identity(),
+                            Collectors.counting()
+                    ))
+                    .entrySet()
+                    .stream()
+                    .max(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey).ifPresent(routeId -> deviceToRoute.put(deviceId, routeId));
+
+        }
+
+        if (deviceToRoute.isEmpty()) {
+            return;
+        }
+
+        List<Long> routeIds = new ArrayList<>(deviceToRoute.values());
+
+        //Get all route IDs created for each campaign - this is written during creation
+        List<RouteCampaignCandidateEntity> candidates = routeCampaignCandidateRepository.findActiveRouteMatchesForRouteIds(routeIds);
+
+       //index route id to all campaigns for fatser fetch via route id
+        Map<Long, List<RouteCampaignCandidateEntity>> candidatesByRoute = candidates.stream()
+                    .collect(Collectors.groupingBy(c -> c.getRoute().getRouteId()));
+
+        //Get current state for ALL devices
+        List<DeviceCurrentStateEntity> currentStates = deviceCurrentStateRepository.findByDeviceIdIn(deviceIds);
+
+        Map<String, DeviceCurrentStateEntity> currentStateByDevice = currentStates.stream()
+                        .collect(Collectors.toMap(DeviceCurrentStateEntity::getDeviceId, Function.identity()));
+
+        //build elgiblie pairs (all possible pairs from above maps for allocation)
 
         List<EligiblePair> eligiblePairs = new ArrayList<>();
 
-        // D5-D8 — for EVERY device on EVERY candidate route, predict + filter + cost
-        for (RouteCampaignCandidateEntity candidate : routeCandidates) {
+        for (String deviceId : deviceIds) {
 
-            List<DeviceRouteEntity> devicesForThisRoute = routeIdToDevices.get(candidate.getRouteId());
-            if (devicesForThisRoute == null || devicesForThisRoute.isEmpty()) continue; // no device on this route right now
+            Long routeId = deviceToRoute.get(deviceId);
 
-            Campaign campaign = campaigns.stream()
-                    .filter(c -> c.getId().equals(candidate.getCampaignId()))
-                    .findFirst().orElseThrow();
+            if (routeId == null) {
+                continue;
+            }
 
-            // iterate every device on this route — not just the first/only one
-            for (DeviceRouteEntity deviceRoute : devicesForThisRoute) {
+            DeviceCurrentStateEntity currentState = currentStateByDevice.get(deviceId);
 
-                String deviceId = deviceRoute.getDevice().getDeviceId();
-                DeviceCurrentStateEntity currentState = deviceCurrentStateMap.get(deviceId);
-                if (currentState == null) continue; // no live state yet for this device
+            if (currentState == null) {
+                continue;
+            }
 
-                double currentDistance = currentState.getDistanceAlongRoute();
-                double smoothedDelaySeconds = currentState.getSmoothedDelay();
+            List<RouteCampaignCandidateEntity> routeCandidates = candidatesByRoute.getOrDefault(routeId, Collections.emptyList());
 
-                // D5 — historical stats for segments between current position and entry/exit markers
-                List<SegmentHistoricalStatsEntity> segmentStats = segmentHistoricalStatsRepository
-                        .findSegmentsBetween(candidate.getRouteId(), currentDistance, candidate.getExitMarker(),
-                                getHourOfDay(startWindow), getDayOfWeek(startWindow));
+            //for each device - does this pair of route-candidtae work?
+            for (RouteCampaignCandidateEntity candidate : routeCandidates) {
 
-                double totalMeanSeconds = segmentStats.stream().mapToDouble(SegmentHistoricalStatsEntity::getMeanTime).sum();
-                double totalVariance = segmentStats.stream().mapToDouble(SegmentHistoricalStatsEntity::getVariance).sum();
-                double confidenceBandSeconds = Math.sqrt(totalVariance);
+                Campaign campaign = campaignMap.get(candidate.getCampaign().getId());
 
-                // D6 — (optional live traffic correction omitted here, would override nearest segment's mean)
+                if (campaign == null || campaign.getImpressions() <= 0) {
+                    continue;
+                }
 
-                // D7 — predicted arrival window
-                Instant predictedEntryTime = Instant.now()
-                        .plusSeconds((long) smoothedDelaySeconds)
-                        .plusSeconds((long) totalMeanSeconds);
-
-                // D8 — filter: does predicted window overlap this hour?
-                boolean overlaps = !predictedEntryTime.isAfter(endWindow)
-                        && !predictedEntryTime.plusSeconds((long) confidenceBandSeconds).isBefore(startWindow);
-
-                if (!overlaps) continue;
-
+               // Cost of assigning this campaign to this device.
                 double distanceCost = allocationCostCalculator.computeDistanceCost(currentState, campaign);
-                double urgencyFactor = allocationCostCalculator.computeUrgencyFactor(campaign);
-//                double dwellPenalty = allocationCostCalculator.computeDwellPenalty(candidate, currentState, campaign);
-                double confidencePenalty = totalMeanSeconds == 0 ? 0 : confidenceBandSeconds / totalMeanSeconds;
 
-                double cost = distanceCost + urgencyFactor  + confidencePenalty;
+                double urgencyCost = allocationCostCalculator.computeUrgencyFactor(campaign);
 
-                eligiblePairs.add(new EligiblePair(deviceId, campaign.getId(), cost, predictedEntryTime));
+                double cost = distanceCost + urgencyCost;
+
+                eligiblePairs.add(new EligiblePair(deviceId, campaign.getId(), cost, startWindow));
+
             }
         }
 
-// //todo : when we have dedficit ledger
-// D9 — tiering: pull escalated/rescheduled campaigns
-//        Set<String> tier1CampaignIds = deficitLedgerRepository.findCampaignIdsByStatus("escalated_reschedule");
-//
-//        List<EligiblePair> tier1Pairs = eligiblePairs.stream()
-//                .filter(p -> tier1CampaignIds.contains(p.campaignId())).toList();
-//        List<EligiblePair> tier2Pairs = eligiblePairs.stream()
-//                .filter(p -> !tier1CampaignIds.contains(p.campaignId())).toList();
-//
-//        // D10/D11 — cost already computed above; run allocation solve, Tier 1 first against real capacity
-//
-//
-//        List<AllocationResult> tier1Allocations = allocationCostCalculator.allocateWaterFilling(tier1Pairs, campaigns);
-//        List<AllocationResult> tier2Allocations = allocationCostCalculator.allocateWaterFilling(tier2Pairs, campaigns);
-//
-//        List<AllocationResult> allAllocations = new ArrayList<>();
-//        allAllocations.addAll(tier1Allocations);
-//        allAllocations.addAll(tier2Allocations);
+        if (eligiblePairs.isEmpty()) {
+            return;
+        }
 
-        List<AllocationResult> allAllocations = allocationCostCalculator.allocateMinCostFlow(eligiblePairs, campaigns);
+        //allocate for this hour
+        List<AllocationResult> allocations = allocationCostCalculator.allocateMinCostFlow(eligiblePairs, campaigns);
 
-        List<PeriodicAllocationEntity>periodicAllocationEntities = new ArrayList<>();
+        /*
+         * 10. Persist allocations.
+         */
+        ZoneId indiaZone = ZoneId.of("Asia/Kolkata");
+        List<PeriodicAllocationEntity> allocationEntities = new ArrayList<>();
 
-        // D12 — persist allocations
-        for (AllocationResult result : allAllocations) {
+        for (AllocationResult result : allocations) {
+
+            if (result.allocatedPlays() <= 0) {
+                continue;
+            }
+
             PeriodicAllocationEntity allocation = new PeriodicAllocationEntity();
+
             allocation.setDeviceId(result.deviceId());
             allocation.setCampaignId(result.campaignId());
             allocation.setStartWindow(startWindow);
             allocation.setEndWindow(endWindow);
             allocation.setAllocatedPlays(result.allocatedPlays());
-            ZoneId zoneId = ZoneId.of("Asia/Kolkata");
-            allocation.setDateOfAllocation(endWindow.atZone(zoneId).toLocalDate());
-            allocation.setLocalStartTime(startWindow.atZone(zoneId).toLocalTime());
-            allocation.setLocalEndTime(endWindow.atZone(zoneId).toLocalTime());
-
-            periodicAllocationEntities.add(allocation);
-
+            allocation.setDateOfAllocation(startWindow.atZone(indiaZone).toLocalDate());
+            allocation.setLocalStartTime(startWindow.atZone(indiaZone).toLocalTime());
+            allocation.setLocalEndTime(endWindow.atZone(indiaZone).toLocalTime());
+            allocationEntities.add(allocation);
         }
 
-        if(demoModeForFullDay){
-            demoPeriodicAllocationRepository.saveAll(periodicAllocationEntities);
-        }
-        else{
-            //not a demo - hourly cycle
-            periodicAllocationRepository.saveAll(periodicAllocationEntities);
+        if (demoModeForFullDay) {
+            demoPeriodicAllocationRepository.saveAll(allocationEntities);
+        } else {
+            periodicAllocationRepository.saveAll(allocationEntities);
         }
 
-        // D13 — update campaign budgets
-        Map<String, Integer> playsByCampaign = periodicAllocationEntities.stream()
-                .collect(Collectors.groupingBy(
-                        PeriodicAllocationEntity::getCampaignId,
-                        Collectors.summingInt(PeriodicAllocationEntity::getAllocatedPlays)));
+        /*
+         * 11. Reduce remaining campaign demand.
+         */
+        Map<String, Integer> allocatedByCampaign =
+                allocationEntities.stream()
+                        .collect(Collectors.groupingBy(PeriodicAllocationEntity::getCampaignId,
+                                Collectors.summingInt(PeriodicAllocationEntity::getAllocatedPlays)));
 
         for (Campaign campaign : campaigns) {
-            Integer playsThisHour = playsByCampaign.getOrDefault(campaign.getId(), 0);
-            campaign.setImpressions(campaign.getImpressions() - playsThisHour);
-            campaignRepository.save(campaign);
+
+            int allocated = allocatedByCampaign.getOrDefault(campaign.getId(), 0);
+
+            if (allocated > 0) {
+                campaign.setImpressions(campaign.getImpressions() - allocated);
+
+                campaignRepository.save(campaign);
+            }
         }
-
-        //todo : decide how to deal with deficit : D14 — log deficits for unmet demand
-//        for (Campaign campaign : campaigns) {
-//            int playsNeeded = computePlaysNeeded(campaign);
-//            int playsAllocated = playsByCampaign.getOrDefault(campaign.getId(), 0);
-//            int deficit = playsNeeded - playsAllocated;
-//
-//            if (deficit > 0) {
-//                DeficitLedgerEntity ledger = deficitLedgerRepository
-//                        .findByCampaignIdAndHourWindowStart(campaign.getId(), startWindow)
-//                        .orElseGet(DeficitLedgerEntity::new);
-//
-//                ledger.setCampaignId(campaign.getId());
-//                ledger.setHourWindowStart(startWindow);
-//                ledger.setPlaysNeeded(playsNeeded);
-//                ledger.setPlaysAllocated(playsAllocated);
-//                ledger.setDeficit(deficit);
-//
-//                boolean hadDeviceCandidate = eligiblePairs.stream()
-//                        .anyMatch(p -> p.campaignId().equals(campaign.getId()));
-//                ledger.setReason(hadDeviceCandidate ? "starved_despite_availability" : "no_device_in_region");
-//
-//                int graceCycles = ledger.getGraceCyclesUsed() == null ? 0 : ledger.getGraceCyclesUsed();
-//                if (graceCycles >= GRACE_CYCLE_LIMIT) {
-//                    ledger.setStatus("paused_awaiting_decision");
-//                    campaign.setStatus("paused_awaiting_decision");
-//                    campaignRepository.save(campaign);
-//                    // trigger advertiser notification — async, outside this flow
-//                } else {
-//                    ledger.setGraceCyclesUsed(graceCycles + 1);
-//                    ledger.setStatus("auto_retry");
-//                }
-//                deficitLedgerRepository.save(ledger);
-//            }
-//        }
-    }
-
-    private int getHourOfDay(Instant instant) {
-        return instant.atZone(ZoneOffset.UTC).getHour();
-    }
-
-    private int getDayOfWeek(Instant instant) {
-        return instant.atZone(ZoneOffset.UTC).getDayOfWeek().getValue(); // 1 = Monday ... 7 = Sunday
-    }
-
-
-
-    @Transactional
-    public DeviceRouteEntity assignRouteToDevice(String deviceId, Long routeId) {
-
-        // Use getReference to avoid an extra SELECT query; sets up proxies for the foreign keys
-        DeviceCredentialEntity deviceProxy = entityManager.getReference(DeviceCredentialEntity.class, deviceId);
-        RouteEntity routeProxy = entityManager.getReference(RouteEntity.class, routeId);
-
-        Pair<String, String>locations = extractPoints(routeProxy.getPath());
-
-        DeviceRouteEntity assignment = new DeviceRouteEntity();
-        assignment.setDevice(deviceProxy);
-        assignment.setRoute(routeProxy);
-        assignment.setFromLocation(locations.getLeft());
-        assignment.setToLocation(locations.getRight());
-        assignment.setActive(true);
-
-        return deviceRouteRepository.save(assignment);
-    }
-
-    private Pair<String, String> extractPoints(LineString path) {
-        if (path == null || path.isEmpty()) {
-            return Pair.of(null, null);
-        }
-        Point startPoint = path.getStartPoint();
-        Point endPoint = path.getEndPoint();
-
-        return Pair.of(startPoint.toString(), endPoint.toString());
     }
 
 

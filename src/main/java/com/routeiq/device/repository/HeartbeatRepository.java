@@ -19,4 +19,11 @@ public interface HeartbeatRepository extends JpaRepository<HeartbeatEntity, Long
 
 
     List<HeartbeatEntity> findByRouteIdAndReceivedAtBetweenOrderByDeviceIdAscReceivedAtAsc(Long routeId, Instant dayStart, Instant dayEnd);
+
+    @Query("""
+    SELECT h FROM HeartbeatEntity h
+    WHERE h.deviceId IN :deviceIds
+    ORDER BY h.deviceId, h.receivedAt DESC
+    """)
+    List<HeartbeatEntity> findRecentHeartbeats(List<String> deviceIds);
 }

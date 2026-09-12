@@ -23,8 +23,9 @@ public class DeviceCurrentStateEntity {
     @Column(name = "device_id", nullable = false, length = 16)
     private String deviceId;
 
-    @Column(name = "current_route_id", nullable = false)
-    private Long currentRouteId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "current_route_id", nullable = false, foreignKey = @ForeignKey(name = "fk_device_current_route"))
+    private RouteEntity currentRouteId;
 
     @Column(name = "position", nullable = false, columnDefinition = "geography(Point,4326)")
     private Point position;
@@ -32,11 +33,6 @@ public class DeviceCurrentStateEntity {
     @Column(name = "distance_along_route", nullable = false)
     private Double distanceAlongRoute;
 
-    @Column(name = "smoothed_delay", nullable = false)
-    private Double smoothedDelay;
-
-    @Column(name = "error_covariance", nullable = false)
-    private Double errorCovariance;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSXXX", timezone = "UTC")
     @Column(name = "updated_at", nullable = false)

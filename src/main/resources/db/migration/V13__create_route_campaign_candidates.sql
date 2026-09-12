@@ -6,7 +6,17 @@ CREATE TABLE route_campaign_candidates (
 
                                            entry_marker DOUBLE PRECISION NOT NULL,
                                            exit_marker DOUBLE PRECISION NOT NULL,
-                                           active BOOLEAN NOT NULL
+                                           active BOOLEAN NOT NULL,
+
+                                               CONSTRAINT fk_campaign_candidate
+                                               FOREIGN KEY (campaign_id)
+                                                      REFERENCES campaigns(id)
+                                                      ON DELETE CASCADE,
+
+                                           CONSTRAINT fk_route_candidate
+                                               FOREIGN KEY (route_id)
+                                                   REFERENCES routes(route_id)
+                                                   ON DELETE CASCADE
 );
 
 CREATE INDEX idx_route_campaign_candidates_route_id

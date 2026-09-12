@@ -80,15 +80,6 @@ public class DeviceController {
     //todo : this controller should only be called by admins - manually - maybe something like SR authentication required
 
     @PostMapping(
-            value = "/map-device-to-route",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.TEXT_PLAIN_VALUE
-    )
-    public void mapDeviceToRoute(@Valid @RequestBody DeviceToRouteRequest request) {
-        deviceService.assignRouteToDevice(request.deviceId(), request.routeId());
-    }
-
-    @PostMapping(
             value = "/periodic-allocation",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_PLAIN_VALUE

@@ -12,4 +12,6 @@ public interface DeviceCurrentStateRepository extends JpaRepository<DeviceCurren
 
     @Query("SELECT d FROM DeviceCurrentStateEntity d WHERE d.deviceId IN :deviceIds")
     List<DeviceCurrentStateEntity> findByDeviceIdIn(List<String> deviceIds);
+
+
 }

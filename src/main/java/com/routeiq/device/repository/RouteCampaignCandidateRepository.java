@@ -8,6 +8,6 @@ import java.util.List;
 
 public interface RouteCampaignCandidateRepository extends JpaRepository<RouteCampaignCandidateEntity, Long> {
 
-    @Query("Select rcc from RouteCampaignCandidateEntity rcc where rcc.campaignId IN :campaignId and rcc.active = true")
-    List<RouteCampaignCandidateEntity> findActiveRouteMatchesForCampaignIds(List<String> campaignId);
+    @Query("Select rcc from RouteCampaignCandidateEntity rcc where rcc.route.routeId IN :routeIds and rcc.active = true")
+    List<RouteCampaignCandidateEntity> findActiveRouteMatchesForRouteIds(List<Long> routeIds);
 }
