@@ -2,6 +2,8 @@ package com.routeiq.device.config;
 
 import com.routeiq.device.entity.Campaign;
 import com.routeiq.device.entity.DeviceCurrentStateEntity;
+import com.routeiq.device.entity.RouteCampaignCandidateEntity;
+import com.routeiq.device.repository.RouteCampaignCandidateRepository;
 import com.routeiq.device.service.DeviceService.EligiblePair;
 import com.routeiq.device.service.DeviceService.AllocationResult;
 import org.locationtech.jts.geom.Coordinate;
@@ -24,19 +26,17 @@ public class AllocationCostCalculator {
 
     private static final Integer AD_DURATION_SECONDS = 60; // default ad duration in seconds
 
-    private Integer DEVICE_HOURLY_CAPACITY_SECONDS = 3600; // 1 hour in seconds - WINDOW SIZE IS 1 HOUR
+    private Integer MAXIMUM_ALLOWED_TIME_FOR_SINGLE_AD = 0;
+    //TODO: USE THIS TO ENSURE ONE AD DOESNT STARVE OTHERS . RIGHT NOW SET TO 0. TO BE SET BY CONFIG WHEN NEED
 
     private static Long COST_SCALE = 1000L;
 
     private final GeometryFactory gf = new GeometryFactory(new PrecisionModel(), 4326);
 
 
-    public double computeDistanceCost(DeviceCurrentStateEntity currentState, Campaign campaign) {
-        Point campaignCenter = gf.createPoint(new Coordinate(campaign.getLongitude(), campaign.getLatitude()));
-        double distanceMeters = haversineDistance(
-                currentState.getPosition(), campaignCenter);
-
-        return W1_DISTANCE * (distanceMeters / (campaign.getRadiusKm() * 1000));//in metres
+    public double computeDistanceCost(RouteCampaignCandidateEntity campaignCandidateEntity, Campaign campaign) {
+        //perpendicular intercept on route from center of campaign
+        return W1_DISTANCE * (campaignCandidateEntity.getDistanceOfEntryMarkerFromCenter() / (campaign.getRadiusKm() * 1000));
     }
 
     public double computeUrgencyFactor(Campaign campaign) {
@@ -85,7 +85,7 @@ public class AllocationCostCalculator {
 
 
     public List<AllocationResult> allocateMinCostFlow(List<EligiblePair> pairs,
-                                                      List<Campaign> campaigns
+                                                      List<Campaign> campaigns, Long duration
                                                                      ) {
         if (pairs.isEmpty()) return List.of();
 
@@ -106,13 +106,14 @@ public class AllocationCostCalculator {
 //source edges
         for (String campaignId : campaignIds) {
             Campaign c = campaigns.stream().filter(camp -> camp.getId().equals(campaignId)).findFirst().orElseThrow();
-            mcf.addEdge(source, campaignOffset + campaignIndex.get(campaignId), c.getImpressions(), 0);
+            int maxTimeForAd = Math.max(c.getImpressions(), MAXIMUM_ALLOWED_TIME_FOR_SINGLE_AD);
+            mcf.addEdge(source, campaignOffset + campaignIndex.get(campaignId), maxTimeForAd, 0);
         }
 
         Map<String, Integer> pairEdgeIndex = new HashMap<>();
         for (EligiblePair pair : pairs) {
 
-            long capacityPlays = (long) (DEVICE_HOURLY_CAPACITY_SECONDS / AD_DURATION_SECONDS);
+            long capacityPlays = (long) (duration / AD_DURATION_SECONDS);
             if (capacityPlays <= 0) continue;
 
             int from = campaignOffset + campaignIndex.get(pair.campaignId());
@@ -125,7 +126,7 @@ public class AllocationCostCalculator {
         }
 //sin edges
         for (String deviceId : deviceIds) {
-            long deviceCapacityPlays = (long) (DEVICE_HOURLY_CAPACITY_SECONDS / AD_DURATION_SECONDS);
+            long deviceCapacityPlays = (long) (duration / AD_DURATION_SECONDS);
             mcf.addEdge(deviceOffset + deviceIndex.get(deviceId), sink, deviceCapacityPlays, 0);
         }
 

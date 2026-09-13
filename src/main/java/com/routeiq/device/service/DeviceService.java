@@ -16,10 +16,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.*;
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
+import org.locationtech.jts.simplify.TopologyPreservingSimplifier;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
@@ -141,6 +143,14 @@ public class DeviceService {
                 .flatMap(java.util.Arrays::stream)
                 .toArray(Coordinate[]::new);
 
+        Coordinate[] cleanedCoords = java.util.Arrays.stream(coords)
+                .distinct()
+                .toArray(Coordinate[]::new);
+
+        if (cleanedCoords.length < 2) {
+            throw new IllegalArgumentException("Route must contain at least 2 distinct points.");
+        }
+
         RouteEntity route = new RouteEntity();
         route.setRouteName(request.routeName());
         route.setPath(gf.createLineString(coords));
@@ -245,11 +255,6 @@ public class DeviceService {
         Map<Long, List<RouteCampaignCandidateEntity>> candidatesByRoute = candidates.stream()
                     .collect(Collectors.groupingBy(c -> c.getRoute().getRouteId()));
 
-        //Get current state for ALL devices
-        List<DeviceCurrentStateEntity> currentStates = deviceCurrentStateRepository.findByDeviceIdIn(deviceIds);
-
-        Map<String, DeviceCurrentStateEntity> currentStateByDevice = currentStates.stream()
-                        .collect(Collectors.toMap(DeviceCurrentStateEntity::getDeviceId, Function.identity()));
 
         //build elgiblie pairs (all possible pairs from above maps for allocation)
 
@@ -260,12 +265,6 @@ public class DeviceService {
             Long routeId = deviceToRoute.get(deviceId);
 
             if (routeId == null) {
-                continue;
-            }
-
-            DeviceCurrentStateEntity currentState = currentStateByDevice.get(deviceId);
-
-            if (currentState == null) {
                 continue;
             }
 
@@ -281,7 +280,7 @@ public class DeviceService {
                 }
 
                // Cost of assigning this campaign to this device.
-                double distanceCost = allocationCostCalculator.computeDistanceCost(currentState, campaign);
+                double distanceCost = allocationCostCalculator.computeDistanceCost(candidate, campaign);
 
                 double urgencyCost = allocationCostCalculator.computeUrgencyFactor(campaign);
 
@@ -297,7 +296,9 @@ public class DeviceService {
         }
 
         //allocate for this hour
-        List<AllocationResult> allocations = allocationCostCalculator.allocateMinCostFlow(eligiblePairs, campaigns);
+//        System.out.println(eligiblePairs);
+        Long duration = Math.abs(Duration.between(startWindow, endWindow).getSeconds());
+        List<AllocationResult> allocations = allocationCostCalculator.allocateMinCostFlow(eligiblePairs, campaigns, duration);
 
         /*
          * 10. Persist allocations.

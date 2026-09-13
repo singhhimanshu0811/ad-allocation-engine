@@ -10,10 +10,11 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface RouteSpatialRepository extends JpaRepository<RouteEntity, Long> {
     @Query(value = """
-        SELECT ST_LineLocatePoint(r.path::geometry, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
-               * ST_Length(r.path::geography)
-        FROM routes r WHERE r.route_id = :routeId
-        """, nativeQuery = true)
+    SELECT ST_LineLocatePoint(r.path::geometry, ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)) 
+           * ST_Length(ST_Transform(r.path::geometry, 3857))
+    FROM routes r 
+    WHERE r.route_id = :routeId
+    """, nativeQuery = true)
     Double locateDistanceAlongRoute(@Param("routeId") Long routeId,
                                     @Param("lat") double lat,
                                     @Param("lon") double lon);

@@ -6,7 +6,9 @@ import lombok.Getter;
 import lombok.Setter;
 import org.locationtech.jts.geom.LineString;
 
-@Table(name = "routes")
+@Table(name = "routes", indexes = {
+        @Index(name = "idx_routes_path", columnList = "path")
+})
 @Entity
 @Setter
 @Getter
@@ -16,7 +18,7 @@ public class RouteEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long routeId;
 
-    @Column(columnDefinition = "geography(LineString, 4326)")
+    @Column(columnDefinition = "geometry(LineString, 4326)")
     private LineString path;
 
     @Column(name = "route_name", nullable = false, length = 128)

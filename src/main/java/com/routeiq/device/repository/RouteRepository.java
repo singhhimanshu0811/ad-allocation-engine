@@ -16,13 +16,11 @@ public interface RouteRepository extends JpaRepository<RouteEntity, Long> {
     Optional<RouteEntity> findByRouteName(String routeName);
 
     @Query(value = """
-        SELECT *
-        FROM routes
-        ORDER BY path <-> ST_SetSRID(
-            ST_MakePoint(:lon, :lat), 4326
-        )::geography
-        LIMIT 1
-        """, nativeQuery = true)
+    SELECT *
+    FROM routes
+    ORDER BY path <-> ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
+    LIMIT 1
+    """, nativeQuery = true)
     Optional<RouteEntity> findNearestRoute(
             @Param("lat") double lat,
             @Param("lon") double lon

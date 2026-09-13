@@ -1,0 +1,1 @@
+ALTER TABLE routes ALTER COLUMN path TYPE geometry(LineString, 4326) USING path::geometry;

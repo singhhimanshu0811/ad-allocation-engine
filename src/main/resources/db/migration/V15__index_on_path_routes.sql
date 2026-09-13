@@ -1,0 +1,1 @@
+CREATE INDEX idx_routes_path ON routes USING GIST (path);
