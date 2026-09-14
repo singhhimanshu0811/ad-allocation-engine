@@ -31,7 +31,7 @@ public class RouteCampaignCandidateEntity {
     @Column(name = "exit_marker", nullable = false)
     private Double exitMarker;
 
-    @Column(name = "distance_to_campaign_center_meters")
+    @Column(name = "distance_to_campaign_center_meters", nullable = false)
     private Double distanceOfEntryMarkerFromCenter;
 
     @Column(name = "active", nullable = false)

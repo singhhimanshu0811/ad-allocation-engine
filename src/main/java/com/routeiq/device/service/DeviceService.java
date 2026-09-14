@@ -59,7 +59,7 @@ public class DeviceService {
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
 
-    public record EligiblePair(String deviceId, String campaignId, double cost, Instant predictedEntryTime) {}
+    public record EligiblePair(String deviceId, String campaignId, double cost, Long timeToReach, Instant predictedEntryTime) {}
     public record AllocationResult(String deviceId, String campaignId, int allocatedPlays) {}
 
 
@@ -143,13 +143,6 @@ public class DeviceService {
                 .flatMap(java.util.Arrays::stream)
                 .toArray(Coordinate[]::new);
 
-        Coordinate[] cleanedCoords = java.util.Arrays.stream(coords)
-                .distinct()
-                .toArray(Coordinate[]::new);
-
-        if (cleanedCoords.length < 2) {
-            throw new IllegalArgumentException("Route must contain at least 2 distinct points.");
-        }
 
         RouteEntity route = new RouteEntity();
         route.setRouteName(request.routeName());
@@ -220,8 +213,19 @@ public class DeviceService {
         Map<String, List<HeartbeatEntity>> heartbeatsByDevice = heartbeats.stream().
                 collect(Collectors.groupingBy(HeartbeatEntity::getDeviceId));
 
+        //get current state of each device and store it in map
+        List<DeviceCurrentStateEntity>deviceCurrentStateEntityList = deviceCurrentStateRepository.findByDeviceIdIn(deviceIds);
+//see how map strategy is different from heartbeats and deviceCurrentStateEntityList
+        Map<String, DeviceCurrentStateEntity> deviceCurrentStateEntityMap =
+                deviceCurrentStateEntityList.stream().collect(Collectors.toMap(
+                        h -> h.getDeviceId(),
+                        h -> h
+                ));
+
        //for each device figure out route by 5 previous route pings and then mode
         Map<String, Long> deviceToRoute = new HashMap<>();
+
+        Map<String, Double> averageSpeed = new HashMap<>();
 
         for (String deviceId : deviceIds) {
 
@@ -239,6 +243,14 @@ public class DeviceService {
                     .stream()
                     .max(Map.Entry.comparingByValue())
                     .map(Map.Entry::getKey).ifPresent(routeId -> deviceToRoute.put(deviceId, routeId));
+
+            Double averageSpeedWithinLast20Pings = deviceHeartbeats.stream()
+                    .limit(20)
+                    .map(HeartbeatEntity::getSpeed)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.averagingDouble(Double::doubleValue));
+
+            averageSpeed.putIfAbsent(deviceId, averageSpeedWithinLast20Pings);
 
         }
 
@@ -261,6 +273,8 @@ public class DeviceService {
         List<EligiblePair> eligiblePairs = new ArrayList<>();
 
         for (String deviceId : deviceIds) {
+            //todo : if no ping for last some time, dont allocate
+            //todo : if speed is not calculable, dont allocate - within this time there should be some speed - division by 0 should not happen
 
             Long routeId = deviceToRoute.get(deviceId);
 
@@ -270,8 +284,19 @@ public class DeviceService {
 
             List<RouteCampaignCandidateEntity> routeCandidates = candidatesByRoute.getOrDefault(routeId, Collections.emptyList());
 
+            DeviceCurrentStateEntity deviceCurrentState = deviceCurrentStateEntityMap.get(deviceId);
+
             //for each device - does this pair of route-candidtae work?
             for (RouteCampaignCandidateEntity candidate : routeCandidates) {
+
+                double remainingDistance = candidate.getEntryMarker() - deviceCurrentState.getDistanceAlongRoute();
+
+                Double deviceAverageSpeed = averageSpeed.get(deviceId);
+
+                Long timeToReach = remainingDistance <= 0 ? 0 : Objects.isNull(deviceAverageSpeed) ? Long.MAX_VALUE : Math.round(remainingDistance / averageSpeed.get(deviceId));
+
+                //todo : once we constraint users based on radius, add another check if this device has passed exit marker for this campaign.
+                // if it has, continue, dont add this as eligible pair even after intersection
 
                 Campaign campaign = campaignMap.get(candidate.getCampaign().getId());
 
@@ -286,7 +311,7 @@ public class DeviceService {
 
                 double cost = distanceCost + urgencyCost;
 
-                eligiblePairs.add(new EligiblePair(deviceId, campaign.getId(), cost, startWindow));
+                eligiblePairs.add(new EligiblePair(deviceId, campaign.getId(), cost, timeToReach, startWindow));
 
             }
         }

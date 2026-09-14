@@ -10,5 +10,6 @@ public record HeartbeatRequest(
         @NotNull Boolean heartbeat,
         @NotNull Double lat,
         @NotNull Double lon,
+        @NotNull Double speed, //coming in m/s
         @NotNull Instant pingTime
 ) {}

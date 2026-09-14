@@ -52,11 +52,11 @@ public class HeartbeatService {
         this.routeRepository = routeRepository;
     }
 
-    @Scheduled(fixedDelayString = "${heartbeat.cleanup.fixed-delay-ms:43200000}")
-    @Transactional
-    public void deleteOldHeartbeats() {
-        heartbeatRepository.deleteOlderThan(Instant.now().minus(retentionPeriod));
-    }
+//    @Scheduled(fixedDelayString = "${heartbeat.cleanup.fixed-delay-ms:43200000}")
+//    @Transactional
+//    public void deleteOldHeartbeats() {
+//        heartbeatRepository.deleteOlderThan(Instant.now().minus(retentionPeriod));
+//    }
 
     @Transactional
     public void recordHeartBeat(HeartbeatRequest request){
@@ -110,6 +110,7 @@ public class HeartbeatService {
         heartbeatEntity.setReceivedAt(pingTime);
         heartbeatEntity.setHeartbeat(true);
         heartbeatEntity.setRouteId(routeId);
+        heartbeatEntity.setSpeed(request.speed());//converting km/h in m/s
         heartbeatRepository.save(heartbeatEntity);
 
     }

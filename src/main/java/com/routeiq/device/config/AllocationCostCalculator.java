@@ -26,7 +26,11 @@ public class AllocationCostCalculator {
 
     private static final Integer AD_DURATION_SECONDS = 60; // default ad duration in seconds
 
+    private static final boolean REGION_CONSTRAINT = false;
+
     private Integer MAXIMUM_ALLOWED_TIME_FOR_SINGLE_AD = 0;
+
+    double[] tierMultipliers = {1.0, 1.5, 2.5, 5.0};
     //TODO: USE THIS TO ENSURE ONE AD DOESNT STARVE OTHERS . RIGHT NOW SET TO 0. TO BE SET BY CONFIG WHEN NEED
 
     private static Long COST_SCALE = 1000L;
@@ -106,23 +110,66 @@ public class AllocationCostCalculator {
 //source edges
         for (String campaignId : campaignIds) {
             Campaign c = campaigns.stream().filter(camp -> camp.getId().equals(campaignId)).findFirst().orElseThrow();
-            int maxTimeForAd = Math.max(c.getImpressions(), MAXIMUM_ALLOWED_TIME_FOR_SINGLE_AD);
-            mcf.addEdge(source, campaignOffset + campaignIndex.get(campaignId), maxTimeForAd, 0);
+           // approach 1 :  mcf.addEdge(source, campaignOffset + campaignIndex.get(campaignId), c.getImpressions(), 0);
+
+            long tierSize = c.getImpressions() / tierMultipliers.length;
+
+            if(tierSize == 0){
+                mcf.addEdge(source, campaignOffset + campaignIndex.get(campaignId), c.getImpressions(), 0);
+            }
+            else{
+                for (double multiplier : tierMultipliers) {
+
+                    mcf.addEdge(source, campaignOffset + campaignIndex.get(campaignId), tierSize, Math.round(multiplier * COST_SCALE));
+                }
+                //difference in approach 1 and 2 : make a campaign asigment less and less favourable to be repatedly assigned to a single device,
+                //so that all impressions are not consumed in single hour.
+                //if we have signle campaign alloted for this device - then wont matter.
+            }
+
         }
 
-        Map<String, Integer> pairEdgeIndex = new HashMap<>();
+        Map<String, List<Integer>> pairEdgeIndex = new HashMap<>();
         for (EligiblePair pair : pairs) {
 
-            long capacityPlays = (long) (duration / AD_DURATION_SECONDS);
-            if (capacityPlays <= 0) continue;
+            long playableSeconds = REGION_CONSTRAINT ? Math.max(0, duration - pair.timeToReach()) : duration;
+            //time to reach will be 0 if its already within region
+
+            long capacityPlaysAllowed = playableSeconds / AD_DURATION_SECONDS;
+
+            //if for this pair - some time was remaing - it should not remain empty . some other should be allowed.
+            // todo : see how
+
+            if (capacityPlaysAllowed <= 0) continue;
 
             int from = campaignOffset + campaignIndex.get(pair.campaignId());
             int to = deviceOffset + deviceIndex.get(pair.deviceId());
             long scaledCost = Math.round(pair.cost() * COST_SCALE);
 
-            int forwardEdgeId = mcf.edgeCount();
-            mcf.addEdge(from, to, capacityPlays, scaledCost);
-            pairEdgeIndex.put(pair.campaignId() + "|" + pair.deviceId(), forwardEdgeId);
+
+            long capacityPlaysAllowedTiered = capacityPlaysAllowed / tierMultipliers.length;
+
+            String key = pair.campaignId() + "|" + pair.deviceId();
+
+            if(capacityPlaysAllowedTiered == 0){
+                int forwardEdgeId = mcf.edgeCount();
+                mcf.addEdge(from, to, capacityPlaysAllowed, scaledCost);
+                pairEdgeIndex.put(key, List.of(forwardEdgeId));
+            }
+
+            else{
+
+                List<Integer> tieredForwardEdgeIds = new ArrayList<>();
+                for(double multiplier : tierMultipliers){
+                    int forwardEdgeId = mcf.edgeCount();
+                    mcf.addEdge(from, to, capacityPlaysAllowedTiered, Math.round(scaledCost * multiplier));
+                    tieredForwardEdgeIds.add(forwardEdgeId);
+                }
+                pairEdgeIndex.put(key, tieredForwardEdgeIds);
+            }
+
+//            mcf.addEdge(from, to, capacityPlaysAllowed, scaledCost);
+//            pairEdgeIndex.put(pair.campaignId() + "|" + pair.deviceId(), forwardEdgeId);
         }
 //sin edges
         for (String deviceId : deviceIds) {
@@ -133,11 +180,17 @@ public class AllocationCostCalculator {
         mcf.run(source, sink);
 
         List<AllocationResult> results = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : pairEdgeIndex.entrySet()) {
+        for (Map.Entry<String, List<Integer>> entry : pairEdgeIndex.entrySet()) {
             String[] parts = entry.getKey().split("\\|");
             String campaignId = String.valueOf(parts[0]);
             String deviceId = parts[1];
-            long flow = mcf.getFlowOnEdge(entry.getValue());
+
+            long flow = 0;
+
+            for(Integer e : entry.getValue()){
+                flow += mcf.getFlowOnEdge(e);
+            }
+
             if (flow > 0) results.add(new AllocationResult(deviceId, campaignId, (int) flow));
         }
         return results;

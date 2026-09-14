@@ -34,6 +34,9 @@ public class HeartbeatEntity extends AuditableEntity {
     @Column(nullable = false)
     private boolean heartbeat;
 
+    @Column(name = "speed", nullable = false)
+    private Double speed;
+
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt;
 
